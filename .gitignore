@@ -1,0 +1,37 @@
+# Arquivos de configuração e sensíveis
+# O cookie.txt contém informações de autenticação e NUNCA deve ser versionado.
+cookie.txt
+
+# Arquivos de saída de mídia
+# Ignora todos os arquivos de vídeo e áudio que o script possa gerar.
+*.mp4
+*.mp3
+*.mkv
+*.webm
+*.flv
+*.avi
+*.aac
+*.ogg
+*.wav
+
+# Arquivos de cache e compilados do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Arquivos de ambiente virtual do Python
+# Se você decidir usar um venv, ele será ignorado.
+.venv/
+venv/
+ENV/
+env/
+pip-selfcheck.json
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db
