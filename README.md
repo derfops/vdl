@@ -1,63 +1,127 @@
-# VDL - Video Downloader & Audio Extractor
+# VDL: Video Downloader, Transcriber, and Analyzer
 
-`vdl` é um script de linha de comando para Linux, escrito em Python, projetado para baixar vídeos de streams HLS (M3U8) que requerem autenticação via cookies e, em seguida, extrair automaticamente o áudio do arquivo baixado.
+**VDL** é uma poderosa ferramenta de linha de comando projetada para automatizar o fluxo de trabalho de download, transcrição e análise de conteúdo de vídeo a partir de streams HLS protegidos.
 
-Ele utiliza as poderosas ferramentas `yt-dlp` e `ffmpeg` para realizar as tarefas de download e processamento de mídia.
+Com um único comando, você pode baixar uma aula ou palestra, extrair o áudio, gerar uma transcrição precisa e, em seguida, usar a IA da OpenAI para criar um resumo contextual detalhado, pronto para servir como base para um e-book ou material de estudo.
 
-## Funcionalidades
+![Fluxo de Trabalho do VDL](https://i.imgur.com/your-placeholder-image.png) <!-- Você pode criar um diagrama simples e substituir este link -->
 
--   **Download Autenticado**: Utiliza um arquivo `cookie.txt` para se autenticar em serviços de streaming que protegem o conteúdo via login.
--   **Extração de Áudio**: Após o download bem-sucedido do vídeo, extrai automaticamente a faixa de áudio para um arquivo `.mp3` usando `ffmpeg`.
--   **Interface Simples**: Aceita uma URL e um nome de arquivo de destino como argumentos de linha de comando.
--   **Feedback Visual**: Fornece mensagens coloridas de status (informação, sucesso, erro) para uma melhor experiência do usuário.
--   **Verificação de Dependências**: Verifica automaticamente se `yt-dlp` e `ffmpeg` estão instalados antes de executar.
+---
 
-## Pré-requisitos
+## 🌟 Principais Funcionalidades
 
-Para usar este script, você precisa ter os seguintes programas instalados em seu sistema:
+-   **Download Autenticado**: Baixa vídeos de plataformas que protegem o conteúdo com cookies, usando uma variável de ambiente (`VDL_TOKEN`) ou um arquivo `cookie.txt`.
+-   **Organização Automática**: Salva os arquivos de forma estruturada em um diretório de saída, com subpastas para transcrições e resumos de contexto.
+-   **Múltiplos Modos de IA**:
+    -   **Transcrição Local (`-t`)**: Usa a biblioteca `openai-whisper` para transcrever o áudio diretamente na sua máquina, com suporte opcional a GPU (`--gpu`) e seleção de modelos (`--whisper-model`).
+    -   **Contexto Híbrido (`-c`)**: Gera um resumo contextual detalhado via API da OpenAI a partir da transcrição gerada localmente.
+    -   **Modo Unificado (`-u`)**: Simplifica todo o processo enviando o áudio diretamente para a API da OpenAI, que realiza tanto a transcrição quanto a geração do contexto, economizando recursos locais.
+-   **Pronto para Automação**: Pode ser facilmente integrado a pipelines de CI/CD, como o Jenkins.
+-   **Logging Detalhado**: Mantém um registro completo de cada operação para fácil depuração (`-l`).
 
-1.  **Python 3**
-2.  **yt-dlp**
-3.  **FFmpeg**
+---
 
-Para instruções detalhadas de instalação, consulte o arquivo [INSTALL.md](INSTALL.md).
+## 🚀 Instalação
 
-## Como Usar
+Para instruções detalhadas sobre como configurar o ambiente e as dependências (`Python`, `FFmpeg`), consulte o arquivo **[INSTALL.md](INSTALL.md)**.
 
-1.  **Instale as Dependências**: Siga as instruções no arquivo [INSTALL.md](INSTALL.md).
-
-2.  **Prepare o Cookie**: Exporte os cookies do seu navegador para um arquivo chamado `cookie.txt` e coloque-o no mesmo diretório do script `vdl`. O formato esperado é um JSON específico, gerado por extensões como a FlagCookies.
-
-    *Exemplo de `cookie.txt`*:
-    ```json
-    {"userAgent":"Mozilla/5.0...",".dominio.com":{...}}
-    ```
-
-3.  **Torne o Script Executável**: Abra o terminal e execute o seguinte comando no diretório do script:
-    ```bash
-    chmod +x vdl
-    ```
-
-4.  **Execute o Script**: Use o seguinte formato para iniciar o download:
-    ```bash
-    ./vdl "URL_DO_VIDEO" "nome_do_arquivo.mp4"
-    ```
-
-    -   `"URL_DO_VIDEO"`: O link direto para o arquivo de playlist `.m3u8`. **É crucial colocar a URL entre aspas** para evitar erros com caracteres especiais.
-    -   `"nome_do_arquivo.mp4"`: O nome que você deseja dar ao arquivo de vídeo baixado.
-
-### Exemplo de Execução
+O resumo da instalação das dependências Python é:
 
 ```bash
-./vdl "https://servidor.de.video/stream/playlist.m3u8?token=xyz" "aula_de_calculo.mp4"
+# Navegue até o diretório do projeto
+cd /caminho/para/vdl
+
+# Instale as bibliotecas necessárias
+pip install -r requirements.txt
+
+# Dê permissão de execução ao script
+chmod +x vdl
 ```
 
-Após a execução, você terá dois arquivos no seu diretório:
--   `aula_de_calculo.mp4` (o vídeo completo )
--   `aula_de_calculo.mp3` (o áudio extraído)
+---
 
-## Solução de Problemas
+## ⚙️ Configuração
 
--   **Erro "Comando não encontrado"**: Certifique-se de que todas as dependências em [INSTALL.md](INSTALL.md) estão corretamente instaladas e acessíveis no `PATH` do seu sistema.
--   **Erro "HTTP Error 403: Forbidden"**: Isso geralmente significa que o token na URL ou o cookie de autenticação expirou. Volte ao site, gere um novo link de vídeo e exporte um novo `cookie.txt`.
--   **Erro "Arquivo de cookie não encontrado"**: Verifique se o arquivo `cookie.txt` está no mesmo diretório que o script `vdl` e se tem o nome correto.
+Antes de usar, você precisa configurar a autenticação para download e, opcionalmente, a chave da API da OpenAI.
+
+### 1. Autenticação para Download (Obrigatório)
+
+O script oferece duas formas de autenticação, com prioridade para a variável de ambiente.
+
+-   **(Recomendado) Variável de Ambiente `VDL_TOKEN`**:
+    Defina a variável com o `User-Agent` e o `cookie`, separados por um ponto e vírgula.
+    ```bash
+    # Exemplo para Linux/macOS
+    export VDL_TOKEN="Mozilla/5.0 (Windows NT...);aws-waf-token=valor-do-seu-cookie..."
+    ```
+
+-   **(Alternativa) Arquivo `cookie.txt`**:
+    Se `VDL_TOKEN` não estiver definida, o script procurará por um arquivo `cookie.txt` no mesmo diretório.
+
+### 2. Chave da API da OpenAI (Opcional)
+
+Para usar as funcionalidades de IA que se conectam à OpenAI (`-c` ou `-u`), defina sua chave da API.
+
+```bash
+# Exemplo para Linux/macOS
+export OPENAI_API_TOKEN="seu_token_sk-xxxxxxxx_aqui"
+```
+
+---
+
+## 💻 Como Usar
+
+O formato básico do comando é:
+
+```bash
+./vdl <URL> <nome_do_arquivo.mp4> [opções]
+```
+
+### Exemplos Práticos
+
+#### 📥 **Exemplo 1: Apenas Baixar o Vídeo e o Áudio**
+O caso de uso mais simples.
+```bash
+./vdl "https://url.do.video/playlist.m3u8?token=..." "aula_01.mp4"
+```
+> **Resultado**: Salva `output_dir/aula_01.mp4` e `output_dir/aula_01.mp3`.
+
+#### 📝 **Exemplo 2: Transcrição Local com Modelo Específico**
+Use a flag `-t` para transcrever localmente, escolhendo um modelo maior para mais precisão.
+```bash
+./vdl "URL_DO_VIDEO" "aula_02.mp4" -t --whisper-model medium```
+> **Resultado**: Salva o vídeo, o áudio e a transcrição em `output_dir/transcriptions/aula_02.txt`.
+
+#### 🧠 **Exemplo 3: Modo Unificado (A Forma Mais Fácil de Ter Tudo)**
+Use a flag `-u` para que a API da OpenAI cuide de tudo: transcrição e geração de contexto.
+```bash
+./vdl "URL_DA_REUNIAO" "reuniao_semanal.mp4" -u -d ./reunioes
+```
+> **Resultado**: Salva os arquivos nos subdiretórios do diretório `reunioes/`:
+> - `reunioes/reuniao_semanal.mp4`
+> - `reunioes/reuniao_semanal.mp3`
+> - `reunioes/transcriptions/reuniao_semanal.txt`
+> - `reunioes/context/reuniao_semanal.md`
+
+#### ⚡ **Exemplo 4: Máxima Performance Local**
+Combine a transcrição local (`-t`) com a geração de contexto (`-c`) e aceleração por GPU (`--gpu`).
+```bash
+./vdl "URL_COMPLEXA" "tutorial_avancado.mp4" -c --gpu
+```
+> **Resultado**: Gera todos os arquivos, mas a transcrição é processada na sua GPU, o que pode ser significativamente mais rápido.
+
+---
+
+## 🎛️ Referência Completa de Argumentos
+
+| Flag              | Argumento         | Descrição                                                                                             |
+| ----------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| (posicional)      | `url`             | A URL completa do stream `.m3u8`. **Obrigatório**.                                                    |
+| (posicional)      | `filename`        | O nome do arquivo de vídeo de saída (ex: `video.mp4`). **Obrigatório**.                               |
+| `-d`, `--directory` | `<caminho>`       | Define o diretório de saída principal. Padrão: `output_dir`.                                          |
+| `-l`, `--log`       | -                 | Ativa o salvamento de um log detalhado da operação na pasta `logs/`.                                  |
+| `-t`, `--transcribe`| -                 | Ativa a transcrição de áudio **localmente** usando `openai-whisper`.                                  |
+| `-c`, `--context`   | -                 | Gera um resumo de contexto via API da OpenAI a partir de uma transcrição **local**. Implica `-t`.      |
+| `-u`, `--unified`   | -                 | **Modo Unificado**: Usa a API da OpenAI para transcrever e gerar contexto. **Não pode ser usado com `-t` ou `-c`**. |
+| `--gpu`             | -                 | Tenta usar a GPU para a transcrição **local**. Só funciona com `-t`.                                  |
+| `--whisper-model` | `[tiny,base,...]` | Escolhe o modelo do Whisper para transcrição **local**. Padrão: `base`. Só funciona com `-t`.         |
