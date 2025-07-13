@@ -35,7 +35,7 @@ pip-selfcheck.json
 # VDL
 cookie.txt 
 
-output_dir/
+
 
 # Arquivos de sistema operacional
 .DS_Store
