@@ -34,8 +34,9 @@ pip-selfcheck.json
 
 # VDL
 cookie.txt 
-
-
+output_dir/
+jenkins_output/
+logs/
 
 # Arquivos de sistema operacional
 .DS_Store

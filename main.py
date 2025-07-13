@@ -41,9 +41,8 @@ def print_success(message):
     print_to_console_and_log(f"[SUCESSO] {message}", C_GREEN)
 
 # --- Funções de Setup e Verificação ---
-def setup_logging(enable_log):
-    """Configura o logging se a flag -l for passada."""
-    if not enable_log: return
+def setup_logging():
+    """Configura o logging automaticamente."""
     global LOG_FILE
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
@@ -53,6 +52,7 @@ def setup_logging(enable_log):
         LOG_FILE = open(log_filename, 'w', encoding='utf-8')
         print_info(f"Logging ativado. A saída será salva em: {log_filename}")
     except IOError as e:
+        # Se o log falhar, imprime o erro no console e continua sem logar.
         print_error(f"Não foi possível criar o arquivo de log: {e}")
         LOG_FILE = None
 
@@ -189,6 +189,9 @@ Com base no conteúdo, liste de 3 a 5 objetivos de aprendizagem claros e mensur�
 ## 🧠 Contexto Aprofundado (In-depth Context)
 Explique o "porquê" por trás da aula. Onde este conhecimento se encaixa em um campo de estudo maior? Qual problema ele resolve? Por que é importante para um profissional da área? Elabore em 2-3 parágrafos.
 
+## ⚠️ Críticas
+Com base no conteúdo, faça uma análise crítica com conteúdo, identificando PONTOS FORTES DO MATERIAL, LACUNAS IDENTIFICADAS NO MATERIAL, PONTOS CONTRADITÓRIOS OU QUESTIONÁVEIS, COMPLEMENTOS NECESSÁRIOS, CRÍTICAS METODOLÓGICAS, OPORTUNIDADES DE APROFUNDAMENTO, RECOMENDAÇÕES PARA MELHORIA e CONCLUSÃO DA ANÁLISE CRÍTICA.
+
 ## 📚 Detalhamento do Conteúdo (Content Breakdown)
 Este é o núcleo do documento. Para cada pilar de conhecimento identificado, crie uma subseção.
 
@@ -274,7 +277,6 @@ Exemplos de uso:
     parser.add_argument("url", nargs='?', default=None, help="A URL do vídeo.")
     parser.add_argument("filename", nargs='?', default=None, help="O nome do arquivo de vídeo de saída.")
     parser.add_argument("-d", "--directory", default="output_dir", help="Diretório de saída principal.")
-    parser.add_argument("-l", "--log", action="store_true", help="Salva um log da operação.")
     parser.add_argument("-t", "--transcribe", action="store_true", help="Gera a transcrição LOCALMENTE.")
     parser.add_argument("-c", "--context", action="store_true", help="Gera contexto via OpenAI a partir de transcrição local.")
     parser.add_argument("-u", "--unified-mode", action="store_true", help="MODO UNIFICADO: Usa a API da OpenAI para transcrever e gerar contexto.")
@@ -294,7 +296,8 @@ Exemplos de uso:
     if args.context:
         args.transcribe = True
 
-    setup_logging(args.log)
+    # Logging é ativado por padrão
+    setup_logging()
 
     if not args.url or not args.filename:
         parser.print_help()
