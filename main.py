@@ -59,7 +59,6 @@ def setup_logging():
 def check_dependencies(args):
     """Verifica as dependências com base nos argumentos fornecidos."""
     has_error = False
-    # yt-dlp não é necessário no modo local
     if not args.local and not shutil.which("yt-dlp"):
         print_error("Dependência não encontrada: 'yt-dlp'. Instale-a.")
         has_error = True
@@ -77,6 +76,10 @@ def check_dependencies(args):
         try: import openai
         except ImportError:
             print_error("Dependência para a API OpenAI não encontrada: 'openai'. Use: pip install openai")
+            has_error = True
+        try: import pydub
+        except ImportError:
+            print_error("Dependência para manipulação de áudio não encontrada: 'pydub'. Use: pip install pydub")
             has_error = True
         if not os.getenv("OPENAI_API_KEY"):
             print_error("A variável de ambiente OPENAI_API_KEY não está definida.")
@@ -246,20 +249,60 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
     print_info("Iniciando processo unificado com a API da OpenAI...")
     try:
         from openai import OpenAI
+        from pydub import AudioSegment
+        
         client = OpenAI()
-        print_info(f"Enviando áudio '{audio_path}' para a API de transcrição...")
-        with open(audio_path, "rb") as audio_file:
-            transcription_response = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
-        transcription_text = transcription_response.text
+        
+        # --- INÍCIO DA LÓGICA DE SEGMENTAÇÃO ---
+        # Limite da API da OpenAI (25 MB), usamos 24 MB para segurança.
+        API_LIMIT_BYTES = 24 * 1024 * 1024
+        
+        audio_size = os.path.getsize(audio_path)
+        
+        full_transcription = ""
+
+        if audio_size > API_LIMIT_BYTES:
+            print_to_console_and_log(f"[AVISO] O arquivo de áudio ({audio_size / (1024*1024):.2f} MB) excede o limite de 24 MB da API. O áudio será segmentado.", C_YELLOW)
+            
+            sound = AudioSegment.from_mp3(audio_path)
+            # 10 minutos em milissegundos
+            chunk_length_ms = 10 * 60 * 1000
+            chunks = [sound[i:i + chunk_length_ms] for i in range(0, len(sound), chunk_length_ms)]
+            
+            temp_chunk_files = []
+            
+            for i, chunk in enumerate(chunks):
+                chunk_filename = f"temp_chunk_{i}.mp3"
+                chunk.export(chunk_filename, format="mp3")
+                temp_chunk_files.append(chunk_filename)
+                
+                print_info(f"Enviando pedaço {i+1}/{len(chunks)} para a API de transcrição...")
+                with open(chunk_filename, "rb") as audio_file:
+                    transcription_response = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
+                full_transcription += transcription_response.text + " "
+            
+            # Limpeza dos arquivos temporários
+            for f in temp_chunk_files:
+                os.remove(f)
+            print_info("Arquivos de áudio temporários foram removidos.")
+
+        else:
+            print_info(f"Enviando áudio '{audio_path}' para a API de transcrição...")
+            with open(audio_path, "rb") as audio_file:
+                transcription_response = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
+            full_transcription = transcription_response.text
+        # --- FIM DA LÓGICA DE SEGMENTAÇÃO ---
+
         print_success("Áudio transcrito com sucesso pela API.")
         
         transcription_dir = os.path.join(output_dir, "transcriptions")
         os.makedirs(transcription_dir, exist_ok=True)
         transcription_path = os.path.join(transcription_dir, os.path.basename(os.path.splitext(audio_path)[0] + ".txt"))
-        with open(transcription_path, 'w', encoding='utf-8') as f: f.write(transcription_text)
+        with open(transcription_path, 'w', encoding='utf-8') as f: f.write(full_transcription)
         print_info(f"Transcrição da API salva em: {transcription_path}")
         
-        generate_context_from_text(transcription_text, base_output_path, output_dir)
+        generate_context_from_text(full_transcription, base_output_path, output_dir)
+        
     except Exception as e:
         print_error(f"Ocorreu um erro no processo unificado da API: {e}")
 

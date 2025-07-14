@@ -2,3 +2,4 @@ openai
 openai-whisper
 torch
 pycryptodomex
+pydub
