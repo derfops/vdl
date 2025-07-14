@@ -8,6 +8,7 @@ import argparse
 import platform
 from datetime import datetime
 import base64
+import uuid # Importa a biblioteca para gerar identificadores únicos
 
 # --- Variável Global para o Arquivo de Log ---
 LOG_FILE = None
@@ -247,51 +248,45 @@ Liste de 3 a 5 conclusões ou lições práticas que o aluno deve levar consigo 
 
 def transcribe_and_generate_context_via_api(audio_path, base_output_path, output_dir):
     print_info("Iniciando processo unificado com a API da OpenAI...")
+    temp_chunk_files = []
     try:
         from openai import OpenAI
         from pydub import AudioSegment
         
         client = OpenAI()
         
-        # --- INÍCIO DA LÓGICA DE SEGMENTAÇÃO ---
-        # Limite da API da OpenAI (25 MB), usamos 24 MB para segurança.
         API_LIMIT_BYTES = 24 * 1024 * 1024
-        
         audio_size = os.path.getsize(audio_path)
-        
         full_transcription = ""
 
         if audio_size > API_LIMIT_BYTES:
             print_to_console_and_log(f"[AVISO] O arquivo de áudio ({audio_size / (1024*1024):.2f} MB) excede o limite de 24 MB da API. O áudio será segmentado.", C_YELLOW)
             
             sound = AudioSegment.from_mp3(audio_path)
-            # 10 minutos em milissegundos
             chunk_length_ms = 10 * 60 * 1000
             chunks = [sound[i:i + chunk_length_ms] for i in range(0, len(sound), chunk_length_ms)]
             
-            temp_chunk_files = []
+            # --- INÍCIO DA ALTERAÇÃO ---
+            # Gera um prefixo único para esta execução para evitar conflitos
+            run_prefix = uuid.uuid4().hex[:8]
             
             for i, chunk in enumerate(chunks):
-                chunk_filename = f"temp_chunk_{i}.mp3"
+                # Usa o prefixo único no nome do arquivo temporário
+                chunk_filename = f"{run_prefix}_chunk_{i}.mp3"
                 chunk.export(chunk_filename, format="mp3")
                 temp_chunk_files.append(chunk_filename)
                 
-                print_info(f"Enviando pedaço {i+1}/{len(chunks)} para a API de transcrição...")
+                print_info(f"Enviando pedaço {i+1}/{len(chunks)} ({chunk_filename}) para a API de transcrição...")
                 with open(chunk_filename, "rb") as audio_file:
                     transcription_response = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
                 full_transcription += transcription_response.text + " "
-            
-            # Limpeza dos arquivos temporários
-            for f in temp_chunk_files:
-                os.remove(f)
-            print_info("Arquivos de áudio temporários foram removidos.")
+            # --- FIM DA ALTERAÇÃO ---
 
         else:
             print_info(f"Enviando áudio '{audio_path}' para a API de transcrição...")
             with open(audio_path, "rb") as audio_file:
                 transcription_response = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
             full_transcription = transcription_response.text
-        # --- FIM DA LÓGICA DE SEGMENTAÇÃO ---
 
         print_success("Áudio transcrito com sucesso pela API.")
         
@@ -305,6 +300,18 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
         
     except Exception as e:
         print_error(f"Ocorreu um erro no processo unificado da API: {e}")
+    finally:
+        # --- INÍCIO DA ALTERAÇÃO ---
+        # Garante que os arquivos temporários sejam sempre limpos, mesmo se ocorrer um erro
+        if temp_chunk_files:
+            print_info("Limpando arquivos de áudio temporários...")
+            for f in temp_chunk_files:
+                try:
+                    os.remove(f)
+                except OSError as e:
+                    print_error(f"Não foi possível remover o arquivo temporário {f}: {e}")
+            print_info("Limpeza concluída.")
+        # --- FIM DA ALTERAÇÃO ---
 
 def main():
     """Função principal do script."""
