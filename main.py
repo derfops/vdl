@@ -7,7 +7,7 @@ import os
 import argparse
 import platform
 from datetime import datetime
-import base64 # Importa a biblioteca para decodificar Base64
+import base64
 
 # --- Variável Global para o Arquivo de Log ---
 LOG_FILE = None
@@ -59,7 +59,8 @@ def setup_logging():
 def check_dependencies(args):
     """Verifica as dependências com base nos argumentos fornecidos."""
     has_error = False
-    if not shutil.which("yt-dlp"):
+    # yt-dlp não é necessário no modo local
+    if not args.local and not shutil.which("yt-dlp"):
         print_error("Dependência não encontrada: 'yt-dlp'. Instale-a.")
         has_error = True
     if not shutil.which("ffmpeg"):
@@ -77,7 +78,6 @@ def check_dependencies(args):
         except ImportError:
             print_error("Dependência para a API OpenAI não encontrada: 'openai'. Use: pip install openai")
             has_error = True
-        # --- ALTERAÇÃO AQUI ---
         if not os.getenv("OPENAI_API_KEY"):
             print_error("A variável de ambiente OPENAI_API_KEY não está definida.")
             has_error = True
@@ -127,9 +127,16 @@ def download_video(url, output_path, user_agent, cookie_header):
         print_error(f"Ocorreu um erro ao executar o yt-dlp: {e}")
         return False
 
-def extract_audio(video_path):
-    audio_path = os.path.splitext(video_path)[0] + ".mp3"
-    print_info(f"Extraindo áudio para: {audio_path}")
+def extract_audio(video_path, output_dir):
+    """Extrai o áudio para um subdiretório 'mp3' e retorna o caminho completo."""
+    audio_dir = os.path.join(output_dir, "mp3")
+    os.makedirs(audio_dir, exist_ok=True)
+    
+    base_filename = os.path.basename(video_path)
+    audio_filename = os.path.splitext(base_filename)[0] + ".mp3"
+    audio_path = os.path.join(audio_dir, audio_filename)
+
+    print_info(f"Extraindo áudio de '{video_path}' para: {audio_path}")
     command = ["ffmpeg", "-i", video_path, "-vn", "-q:a", "0", "-y", "-loglevel", "error", audio_path]
     try:
         subprocess.run(command, check=True)
@@ -221,8 +228,6 @@ Liste de 3 a 5 conclusões ou lições práticas que o aluno deve levar consigo 
 """
     try:
         from openai import OpenAI
-        # --- ALTERAÇÃO AQUI ---
-        # O cliente OpenAI usa OPENAI_API_KEY por padrão se nenhuma chave for passada.
         client = OpenAI()
         response = client.chat.completions.create(
             model="gpt-4-turbo",
@@ -241,7 +246,6 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
     print_info("Iniciando processo unificado com a API da OpenAI...")
     try:
         from openai import OpenAI
-        # --- ALTERAÇÃO AQUI ---
         client = OpenAI()
         print_info(f"Enviando áudio '{audio_path}' para a API de transcrição...")
         with open(audio_path, "rb") as audio_file:
@@ -263,37 +267,41 @@ def main():
     """Função principal do script."""
     parser = argparse.ArgumentParser(
         prog="vdl",
-        description="Baixa, transcreve e analisa vídeos.",
+        description="Baixa ou processa localmente vídeos, transcrevendo e analisando-os.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""
 -------------------------------------------------------------------
-Pré-requisitos de Autenticação:
-  Este script requer credenciais para baixar vídeos. Forneça-as
-  de uma das seguintes maneiras (a variável de ambiente tem prioridade):
+MODOS DE OPERAÇÃO:
 
+1. MODO DOWNLOAD (padrão):
+   Baixa um vídeo a partir de uma URL.
+   Uso: ./main.py <URL> <nome_do_arquivo_saida> [opções]
+
+2. MODO LOCAL (-l):
+   Processa um arquivo de vídeo que já existe no seu computador.
+   Uso: ./main.py -l <caminho_para_o_video> [opções]
+
+-------------------------------------------------------------------
+PRÉ-REQUISITOS DE AUTENTICAÇÃO:
+
+- Para MODO DOWNLOAD:
+  É necessário fornecer credenciais de uma das seguintes formas:
   1. Variável de Ambiente (Recomendado):
      export VDL_TOKEN=$(echo -n 'User-Agent;cookie_value' | base64)
-     O token deve estar no formato 'User-Agent;cookie' e codificado em Base64.
-
   2. Arquivo cookie.txt:
      Crie um arquivo 'cookie.txt' no mesmo diretório do script.
 
-Para as funções de IA (-c, -u), a variável OPENAI_API_KEY também deve ser definida.
+- Para funções de IA (-c, -u):
+  A variável de ambiente OPENAI_API_KEY deve estar definida.
 -------------------------------------------------------------------
-
-Exemplos de uso:
-  # Apenas baixar o vídeo e extrair o áudio
-  ./main.py "URL" "video.mp4"
-
-  # Baixar e gerar a transcrição LOCALMENTE com o modelo 'small'
-  ./main.py "URL" "video.mp4" -t --whisper-model small
-
-  # MODO UNIFICADO: Transcrever e gerar contexto via API da OpenAI
-  ./main.py "URL" "video.mp4" -u
 """
     )
-    parser.add_argument("url", nargs='?', default=None, help="A URL do vídeo.")
-    parser.add_argument("filename", nargs='?', default=None, help="O nome do arquivo de vídeo de saída.")
+    # Argumentos posicionais
+    parser.add_argument("input", help="URL do vídeo (modo download) ou caminho para o arquivo local (modo local).")
+    parser.add_argument("output_filename", nargs='?', default=None, help="Nome do arquivo de vídeo de saída (obrigatório no modo download).")
+    
+    # Flags de modo e configuração
+    parser.add_argument("-l", "--local", action="store_true", help="Ativa o modo de processamento local (ignora o download).")
     parser.add_argument("-d", "--directory", default="output_dir", help="Diretório de saída principal.")
     parser.add_argument("-t", "--transcribe", action="store_true", help="Gera a transcrição LOCALMENTE.")
     parser.add_argument("-c", "--context", action="store_true", help="Gera contexto via OpenAI a partir de transcrição local.")
@@ -303,40 +311,59 @@ Exemplos de uso:
     
     args = parser.parse_args()
 
+    # --- Validação de Argumentos ---
+    if args.local and args.output_filename is not None:
+        parser.error("O argumento 'output_filename' não deve ser fornecido no modo local (-l).")
+    if not args.local and args.output_filename is None:
+        parser.error("O argumento 'output_filename' é obrigatório no modo de download.")
     if args.unified_mode and (args.transcribe or args.context):
-        parser.error("O argumento -u (modo unificado) não pode ser usado em conjunto com -t (transcrição local) ou -c (contexto local).")
-
+        parser.error("O argumento -u (modo unificado) não pode ser usado em conjunto com -t ou -c.")
     if not args.transcribe and (args.gpu or args.whisper_model != 'base'):
-        parser.error("Os argumentos --gpu e --whisper-model só podem ser usados em conjunto com -t (transcrição local).")
+        parser.error("Os argumentos --gpu e --whisper-model só podem ser usados com -t.")
 
     if args.context:
         args.transcribe = True
 
     setup_logging()
 
-    if not args.url or not args.filename:
-        parser.print_help()
-        sys.exit(1)
-
     if not check_dependencies(args):
         sys.exit(1)
 
-    user_agent, cookie = get_auth_details()
-    if not all([user_agent, cookie]):
-        sys.exit(1)
+    # --- Lógica de Execução ---
+    video_to_process = None
+    base_output_path = None
 
-    video_output_path = os.path.join(args.directory, args.filename)
-    
-    if download_video(args.url, video_output_path, user_agent, cookie):
-        audio_path = extract_audio(video_output_path)
+    if args.local:
+        print_info("Executando em MODO LOCAL.")
+        if not os.path.isfile(args.input):
+            print_error(f"Arquivo local não encontrado: {args.input}")
+            sys.exit(1)
+        video_to_process = args.input
+        base_output_path = os.path.join(args.directory, os.path.basename(args.input))
+    else:
+        print_info("Executando em MODO DOWNLOAD.")
+        user_agent, cookie = get_auth_details()
+        if not all([user_agent, cookie]):
+            sys.exit(1)
+        
+        video_output_path = os.path.join(args.directory, args.output_filename)
+        if download_video(args.input, video_output_path, user_agent, cookie):
+            video_to_process = video_output_path
+            base_output_path = video_output_path
+        else:
+            sys.exit(1) # Sai se o download falhar
+
+    # --- Fluxo de Processamento Pós-Download/Local ---
+    if video_to_process:
+        audio_path = extract_audio(video_to_process, args.directory)
         if not audio_path: sys.exit(1)
 
         if args.unified_mode:
-            transcribe_and_generate_context_via_api(audio_path, video_output_path, args.directory)
+            transcribe_and_generate_context_via_api(audio_path, base_output_path, args.directory)
         elif args.transcribe:
             transcription_text = transcribe_audio_local(audio_path, args.whisper_model, args.gpu, args.directory)
             if transcription_text and args.context:
-                generate_context_from_text(transcription_text, video_output_path, args.directory)
+                generate_context_from_text(transcription_text, base_output_path, args.directory)
 
     if LOG_FILE: LOG_FILE.close()
 
