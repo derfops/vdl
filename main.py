@@ -8,7 +8,8 @@ import argparse
 import platform
 from datetime import datetime
 import base64
-import uuid # Importa a biblioteca para gerar identificadores únicos
+import uuid
+import tempfile
 
 # --- Variável Global para o Arquivo de Log ---
 LOG_FILE = None
@@ -60,10 +61,13 @@ def setup_logging():
 def check_dependencies(args):
     """Verifica as dependências com base nos argumentos fornecidos."""
     has_error = False
+    # Apenas verifica yt-dlp se não estiver em modo local
     if not args.local and not shutil.which("yt-dlp"):
         print_error("Dependência não encontrada: 'yt-dlp'. Instale-a.")
         has_error = True
-    if not shutil.which("ffmpeg"):
+    
+    # ffmpeg é necessário para quase tudo, exceto --only-download
+    if not args.only_download and not shutil.which("ffmpeg"):
         print_error("Dependência não encontrada: 'ffmpeg'. Instale-a.")
         has_error = True
 
@@ -114,22 +118,36 @@ def get_auth_details():
 
 # --- Funções de Execução ---
 def download_video(url, output_path, user_agent, cookie_header):
+    """Baixa o vídeo usando um diretório temporário isolado para segurança em paralelo."""
     print_info(f"Iniciando o download de: {url}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     ffmpeg_path = shutil.which("ffmpeg")
-    command = ["yt-dlp", "--user-agent", user_agent, "--add-header", f"Cookie: {cookie_header}", "--ffmpeg-location", ffmpeg_path, "--output", output_path, url]
-    try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1)
-        for line in iter(process.stdout.readline, ''): print_to_console_and_log(line.strip())
-        process.stdout.close()
-        if process.wait() != 0:
-            print_error("O download falhou.")
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        print_info(f"Usando diretório temporário isolado: {temp_dir}")
+        
+        command = [
+            "yt-dlp",
+            "--user-agent", user_agent,
+            "--add-header", f"Cookie: {cookie_header}",
+            "--ffmpeg-location", ffmpeg_path,
+            "--paths", f"temp:{temp_dir}",
+            "--output", output_path,
+            url
+        ]
+        
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1)
+            for line in iter(process.stdout.readline, ''): print_to_console_and_log(line.strip())
+            process.stdout.close()
+            if process.wait() != 0:
+                print_error("O download falhou.")
+                return False
+            print_success(f"Download concluído. Vídeo salvo em: {output_path}")
+            return True
+        except Exception as e:
+            print_error(f"Ocorreu um erro ao executar o yt-dlp: {e}")
             return False
-        print_success(f"Download concluído. Vídeo salvo em: {output_path}")
-        return True
-    except Exception as e:
-        print_error(f"Ocorreu um erro ao executar o yt-dlp: {e}")
-        return False
 
 def extract_audio(video_path, output_dir):
     """Extrai o áudio para um subdiretório 'mp3' e retorna o caminho completo."""
@@ -266,12 +284,9 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
             chunk_length_ms = 10 * 60 * 1000
             chunks = [sound[i:i + chunk_length_ms] for i in range(0, len(sound), chunk_length_ms)]
             
-            # --- INÍCIO DA ALTERAÇÃO ---
-            # Gera um prefixo único para esta execução para evitar conflitos
             run_prefix = uuid.uuid4().hex[:8]
             
             for i, chunk in enumerate(chunks):
-                # Usa o prefixo único no nome do arquivo temporário
                 chunk_filename = f"{run_prefix}_chunk_{i}.mp3"
                 chunk.export(chunk_filename, format="mp3")
                 temp_chunk_files.append(chunk_filename)
@@ -280,7 +295,6 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
                 with open(chunk_filename, "rb") as audio_file:
                     transcription_response = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
                 full_transcription += transcription_response.text + " "
-            # --- FIM DA ALTERAÇÃO ---
 
         else:
             print_info(f"Enviando áudio '{audio_path}' para a API de transcrição...")
@@ -301,8 +315,6 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
     except Exception as e:
         print_error(f"Ocorreu um erro no processo unificado da API: {e}")
     finally:
-        # --- INÍCIO DA ALTERAÇÃO ---
-        # Garante que os arquivos temporários sejam sempre limpos, mesmo se ocorrer um erro
         if temp_chunk_files:
             print_info("Limpando arquivos de áudio temporários...")
             for f in temp_chunk_files:
@@ -311,7 +323,6 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
                 except OSError as e:
                     print_error(f"Não foi possível remover o arquivo temporário {f}: {e}")
             print_info("Limpeza concluída.")
-        # --- FIM DA ALTERAÇÃO ---
 
 def main():
     """Função principal do script."""
@@ -351,6 +362,7 @@ PRÉ-REQUISITOS DE AUTENTICAÇÃO:
     parser.add_argument("output_filename", nargs='?', default=None, help="Nome do arquivo de vídeo de saída (obrigatório no modo download).")
     
     # Flags de modo e configuração
+    parser.add_argument("-o", "--only-download", action="store_true", help="Apenas baixa o vídeo, sem processamento adicional.")
     parser.add_argument("-l", "--local", action="store_true", help="Ativa o modo de processamento local (ignora o download).")
     parser.add_argument("-d", "--directory", default="output_dir", help="Diretório de saída principal.")
     parser.add_argument("-t", "--transcribe", action="store_true", help="Gera a transcrição LOCALMENTE.")
@@ -366,6 +378,12 @@ PRÉ-REQUISITOS DE AUTENTICAÇÃO:
         parser.error("O argumento 'output_filename' não deve ser fornecido no modo local (-l).")
     if not args.local and args.output_filename is None:
         parser.error("O argumento 'output_filename' é obrigatório no modo de download.")
+    
+    # Validações de flags conflitantes
+    if args.only_download and any([args.local, args.transcribe, args.context, args.unified_mode]):
+        parser.error("A flag --only-download não pode ser usada com nenhuma outra flag de processamento (-l, -t, -c, -u).")
+    if args.local and args.only_download:
+        parser.error("As flags --local e --only-download são mutuamente exclusivas.")
     if args.unified_mode and (args.transcribe or args.context):
         parser.error("O argumento -u (modo unificado) não pode ser usado em conjunto com -t ou -c.")
     if not args.transcribe and (args.gpu or args.whisper_model != 'base'):
@@ -390,7 +408,7 @@ PRÉ-REQUISITOS DE AUTENTICAÇÃO:
             sys.exit(1)
         video_to_process = args.input
         base_output_path = os.path.join(args.directory, os.path.basename(args.input))
-    else:
+    else: # Modo Download
         print_info("Executando em MODO DOWNLOAD.")
         user_agent, cookie = get_auth_details()
         if not all([user_agent, cookie]):
@@ -398,6 +416,12 @@ PRÉ-REQUISITOS DE AUTENTICAÇÃO:
         
         video_output_path = os.path.join(args.directory, args.output_filename)
         if download_video(args.input, video_output_path, user_agent, cookie):
+            # --- INÍCIO DA ALTERAÇÃO ---
+            # Se for apenas download, encerra o script aqui com sucesso.
+            if args.only_download:
+                print_info("Modo 'only-download' ativado. Encerrando o script.")
+                sys.exit(0)
+            # --- FIM DA ALTERAÇÃO ---
             video_to_process = video_output_path
             base_output_path = video_output_path
         else:
