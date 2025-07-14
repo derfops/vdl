@@ -77,8 +77,9 @@ def check_dependencies(args):
         except ImportError:
             print_error("Dependência para a API OpenAI não encontrada: 'openai'. Use: pip install openai")
             has_error = True
-        if not os.getenv("OPENAI_API_TOKEN"):
-            print_error("A variável de ambiente OPENAI_API_TOKEN não está definida.")
+        # --- ALTERAÇÃO AQUI ---
+        if not os.getenv("OPENAI_API_KEY"):
+            print_error("A variável de ambiente OPENAI_API_KEY não está definida.")
             has_error = True
             
     return not has_error
@@ -89,7 +90,6 @@ def get_auth_details():
     if vdl_token_b64:
         print_info("Usando autenticação via variável de ambiente VDL_TOKEN (Base64).")
         try:
-            # Decodifica o token de Base64 para string
             decoded_token = base64.b64decode(vdl_token_b64).decode('utf-8')
             user_agent, cookie_value = decoded_token.split(';', 1)
             return user_agent, cookie_value
@@ -221,7 +221,9 @@ Liste de 3 a 5 conclusões ou lições práticas que o aluno deve levar consigo 
 """
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_TOKEN"))
+        # --- ALTERAÇÃO AQUI ---
+        # O cliente OpenAI usa OPENAI_API_KEY por padrão se nenhuma chave for passada.
+        client = OpenAI()
         response = client.chat.completions.create(
             model="gpt-4-turbo",
             messages=[
@@ -239,7 +241,8 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
     print_info("Iniciando processo unificado com a API da OpenAI...")
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_TOKEN"))
+        # --- ALTERAÇÃO AQUI ---
+        client = OpenAI()
         print_info(f"Enviando áudio '{audio_path}' para a API de transcrição...")
         with open(audio_path, "rb") as audio_file:
             transcription_response = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
@@ -275,7 +278,7 @@ Pré-requisitos de Autenticação:
   2. Arquivo cookie.txt:
      Crie um arquivo 'cookie.txt' no mesmo diretório do script.
 
-Para as funções de IA (-c, -u), a variável OPENAI_API_TOKEN também deve ser definida.
+Para as funções de IA (-c, -u), a variável OPENAI_API_KEY também deve ser definida.
 -------------------------------------------------------------------
 
 Exemplos de uso:
