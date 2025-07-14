@@ -7,6 +7,7 @@ import os
 import argparse
 import platform
 from datetime import datetime
+import base64 # Importa a biblioteca para decodificar Base64
 
 # --- Variável Global para o Arquivo de Log ---
 LOG_FILE = None
@@ -52,7 +53,6 @@ def setup_logging():
         LOG_FILE = open(log_filename, 'w', encoding='utf-8')
         print_info(f"Logging ativado. A saída será salva em: {log_filename}")
     except IOError as e:
-        # Se o log falhar, imprime o erro no console e continua sem logar.
         print_error(f"Não foi possível criar o arquivo de log: {e}")
         LOG_FILE = None
 
@@ -84,15 +84,17 @@ def check_dependencies(args):
     return not has_error
 
 def get_auth_details():
-    """Obtém detalhes de autenticação de VDL_TOKEN ou cookie.txt."""
-    vdl_token = os.getenv("VDL_TOKEN")
-    if vdl_token:
-        print_info("Usando autenticação via variável de ambiente VDL_TOKEN.")
+    """Obtém detalhes de autenticação de VDL_TOKEN (Base64) ou cookie.txt."""
+    vdl_token_b64 = os.getenv("VDL_TOKEN")
+    if vdl_token_b64:
+        print_info("Usando autenticação via variável de ambiente VDL_TOKEN (Base64).")
         try:
-            user_agent, cookie_value = vdl_token.split(';', 1)
+            # Decodifica o token de Base64 para string
+            decoded_token = base64.b64decode(vdl_token_b64).decode('utf-8')
+            user_agent, cookie_value = decoded_token.split(';', 1)
             return user_agent, cookie_value
-        except ValueError:
-            print_error("Formato inválido para VDL_TOKEN. Use 'user_agent;cookie_value'.")
+        except (base64.binascii.Error, ValueError, UnicodeDecodeError) as e:
+            print_error(f"Formato inválido ou erro na decodificação de VDL_TOKEN. Use 'user_agent;cookie_value' codificado em Base64. Erro: {e}")
             return None, None
     else:
         print_info("VDL_TOKEN não encontrada. Tentando ler 'cookie.txt'.")
@@ -189,9 +191,6 @@ Com base no conteúdo, liste de 3 a 5 objetivos de aprendizagem claros e mensur�
 ## 🧠 Contexto Aprofundado (In-depth Context)
 Explique o "porquê" por trás da aula. Onde este conhecimento se encaixa em um campo de estudo maior? Qual problema ele resolve? Por que é importante para um profissional da área? Elabore em 2-3 parágrafos.
 
-## ⚠️ Críticas
-Com base no conteúdo, faça uma análise crítica com conteúdo, identificando PONTOS FORTES DO MATERIAL, LACUNAS IDENTIFICADAS NO MATERIAL, PONTOS CONTRADITÓRIOS OU QUESTIONÁVEIS, COMPLEMENTOS NECESSÁRIOS, CRÍTICAS METODOLÓGICAS, OPORTUNIDADES DE APROFUNDAMENTO, RECOMENDAÇÕES PARA MELHORIA e CONCLUSÃO DA ANÁLISE CRÍTICA.
-
 ## 📚 Detalhamento do Conteúdo (Content Breakdown)
 Este é o núcleo do documento. Para cada pilar de conhecimento identificado, crie uma subseção.
 
@@ -260,18 +259,34 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
 def main():
     """Função principal do script."""
     parser = argparse.ArgumentParser(
+        prog="vdl",
         description="Baixa, transcreve e analisa vídeos.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""
+-------------------------------------------------------------------
+Pré-requisitos de Autenticação:
+  Este script requer credenciais para baixar vídeos. Forneça-as
+  de uma das seguintes maneiras (a variável de ambiente tem prioridade):
+
+  1. Variável de Ambiente (Recomendado):
+     export VDL_TOKEN=$(echo -n 'User-Agent;cookie_value' | base64)
+     O token deve estar no formato 'User-Agent;cookie' e codificado em Base64.
+
+  2. Arquivo cookie.txt:
+     Crie um arquivo 'cookie.txt' no mesmo diretório do script.
+
+Para as funções de IA (-c, -u), a variável OPENAI_API_TOKEN também deve ser definida.
+-------------------------------------------------------------------
+
 Exemplos de uso:
   # Apenas baixar o vídeo e extrair o áudio
-  ./vdl "URL" "video.mp4"
+  ./main.py "URL" "video.mp4"
 
   # Baixar e gerar a transcrição LOCALMENTE com o modelo 'small'
-  ./vdl "URL" "video.mp4" -t --whisper-model small
+  ./main.py "URL" "video.mp4" -t --whisper-model small
 
   # MODO UNIFICADO: Transcrever e gerar contexto via API da OpenAI
-  ./vdl "URL" "video.mp4" -u
+  ./main.py "URL" "video.mp4" -u
 """
     )
     parser.add_argument("url", nargs='?', default=None, help="A URL do vídeo.")
@@ -285,18 +300,15 @@ Exemplos de uso:
     
     args = parser.parse_args()
 
-    # Validação de argumentos mutuamente exclusivos
     if args.unified_mode and (args.transcribe or args.context):
         parser.error("O argumento -u (modo unificado) não pode ser usado em conjunto com -t (transcrição local) ou -c (contexto local).")
 
     if not args.transcribe and (args.gpu or args.whisper_model != 'base'):
         parser.error("Os argumentos --gpu e --whisper-model só podem ser usados em conjunto com -t (transcrição local).")
 
-    # Lógica de dependência: -c implica -t
     if args.context:
         args.transcribe = True
 
-    # Logging é ativado por padrão
     setup_logging()
 
     if not args.url or not args.filename:
