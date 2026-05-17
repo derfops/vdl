@@ -38,6 +38,16 @@ output_dir/
 jenkins_output/
 logs/
 
+# Segredos e dados locais (NUNCA versionar)
+.env
+token.txt
+gluetun/
+servers.json
+.claude/
+*.key
+*.crt
+*.pem
+
 # Arquivos de sistema operacional
 .DS_Store
 Thumbs.db

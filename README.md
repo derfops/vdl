@@ -48,15 +48,28 @@ Antes de usar, você precisa configurar a autenticação para download e, opcion
 
 O script oferece duas formas de autenticação, com prioridade para a variável de ambiente.
 
--   **(Recomendado) Variável de Ambiente `VDL_TOKEN`**:
-    Defina a variável com o `User-Agent` e o `cookie`, separados por um ponto e vírgula.
+-   **(Recomendado) Variável de Ambiente `VDL_TOKEN`** com cookies em JSON:
+    Exporte os cookies do navegador (extensões como "Cookie-Editor" geram JSON),
+    codifique em Base64 e exporte:
     ```bash
-    # Exemplo para Linux/macOS
-    export VDL_TOKEN="Mozilla/5.0 (Windows NT...);aws-waf-token=valor-do-seu-cookie..."
+    # Linux/macOS
+    export VDL_TOKEN="$(cat cookies.json | base64 -w0)"
     ```
 
--   **(Alternativa) Arquivo `cookie.txt`**:
-    Se `VDL_TOKEN` não estiver definida, o script procurará por um arquivo `cookie.txt` no mesmo diretório.
+-   **(Alternativa) Arquivo de cookies no diretório do script ou no CWD**:
+    Sem `VDL_TOKEN`, o script procura por (nesta ordem):
+    `cookies.json`, `cookie.json`, `cookies.txt`, `cookie.txt`, `token.txt`.
+
+-   **(Deprecado) Formato `User-Agent;cookie_value`**:
+    O formato legado em texto simples está deprecado. User-Agents reais contêm
+    `;` literais (`Mozilla/5.0 (Windows NT 10.0; Win64; x64)...`), o que quebra
+    o parser. Use cookies em JSON.
+
+#### Domínios protegidos por Referer (BunnyCDN, Cloudflare, etc.)
+
+Streams hospedados em CDN frequentemente exigem header `Referer` apontando para
+a plataforma original. O `vdl` infere automaticamente o referer a partir do
+domínio dos cookies. Para override manual, use `--referer https://plataforma.com/`.
 
 ### 2. Chave da API da OpenAI (Opcional)
 
@@ -124,4 +137,6 @@ Combine a transcrição local (`-t`) com a geração de contexto (`-c`) e aceler
 | `-c`, `--context`   | -                 | Gera um resumo de contexto via API da OpenAI a partir de uma transcrição **local**. Implica `-t`.      |
 | `-u`, `--unified`   | -                 | **Modo Unificado**: Usa a API da OpenAI para transcrever e gerar contexto. **Não pode ser usado com `-t` ou `-c`**. |
 | `--gpu`             | -                 | Tenta usar a GPU para a transcrição **local**. Só funciona com `-t`.                                  |
-| `--whisper-model` | `[tiny,base,...]` | Escolhe o modelo do Whisper para transcrição **local**. Padrão: `base`. Só funciona com `-t`.         |
+| `--whisper-model` | `[tiny,base,...]` | Escolhe o modelo do Whisper para transcrição **local**. Padrão: `base`. Funciona com `-t` ou `-c`.    |
+| `--referer`       | `<URL>`           | Referer HTTP para o download. Por padrão é inferido do domínio dos cookies. |
+| `--all-contexts`  | -                 | Lê todos os `.md` em `context/` e gera um e-book consolidado em Markdown via map-reduce. |

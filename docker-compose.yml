@@ -1,0 +1,20 @@
+services:
+  vdl:
+    build:
+      context: .
+    image: vdl-ubuntu:latest
+    container_name: vdl
+    environment:
+      - TZ=America/Sao_Paulo
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - VDL_TOKEN=${VDL_TOKEN}
+    volumes:
+      - ./data:/data
+      - ./logs:/logs
+      - ./docs/HOWTO.md:/opt/vdl/HOWTO.md:ro
+      - whisper_cache:/cache/whisper
+    working_dir: /data
+    command: bash -lc "python3 /opt/vdl/checkup.py; [ -f /data/vdl_token.env ] && source /data/vdl_token.env; cat /opt/vdl/HOWTO.md; tail -f /dev/null"
+
+volumes:
+  whisper_cache:

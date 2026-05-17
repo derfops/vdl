@@ -1,5 +1,6 @@
-openai
-openai-whisper
-torch
-pycryptodomex
-pydub
+openai>=1.50,<2
+openai-whisper>=20240930
+torch>=2.0,<3
+pycryptodomex>=3.20,<4
+pydub>=0.25,<1
+yt-dlp>=2026.1.0
