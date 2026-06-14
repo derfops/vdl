@@ -962,6 +962,10 @@ async function loadLibrary(path, force = true) {
     state.libraryEntries = entries;
     renderLibraryBrowser();
   } catch (error) {
+    if (target !== "/data") {
+      // a pasta padrão pode não existir neste ambiente — cai para a raiz /data
+      return loadLibrary("/data");
+    }
     state.libraryEntries = [];
     renderLibraryBreadcrumbs();
     if ($("#libraryTable")) {
