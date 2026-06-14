@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VDL Studio</title>
+    <link rel="stylesheet" href="/styles.css?v=redesign-2026" />
+  </head>
+  <body>
+    <!-- ===================== LOGIN ===================== -->
+    <div class="auth-view" id="loginView">
+      <div class="auth-glow auth-glow-a"></div>
+      <div class="auth-glow auth-glow-b"></div>
+      <aside class="auth-brand">
+        <div class="brand">
+          <div class="brand-mark">VDL</div>
+          <div class="brand-copy">
+            <h1>VDL Studio</h1>
+            <p>orquestrador pessoal</p>
+          </div>
+        </div>
+        <div class="auth-hero">
+          <h2>Baixe, transcreva e contextualize — num só lugar.</h2>
+          <p>O orquestrador pessoal do seu pipeline de mídia: download autenticado, transcrição e contexto, com controle total de VPN.</p>
+          <ul class="auth-feats">
+            <li><span class="dot">✓</span> Download autenticado com VPN dedicada</li>
+            <li><span class="dot">✓</span> Transcrição local (Whisper) ou via OpenAI</li>
+            <li><span class="dot">✓</span> Contexto, legendas e e-book automáticos</li>
+          </ul>
+        </div>
+        <p class="auth-meta"><span class="led"></span> v2.0 · build 2026 · acesso local seguro</p>
+      </aside>
+
+      <div class="auth-panel">
+        <form class="auth-card" id="loginForm">
+          <p class="eyebrow cyan">Bem-vindo de volta</p>
+          <h2>Entrar no VDL Studio</h2>
+          <p class="muted-text">Use suas credenciais para acessar o orquestrador.</p>
+          <label class="field">
+            <span>Usuário</span>
+            <input id="loginUser" autocomplete="username" value="admin" />
+          </label>
+          <label class="field">
+            <span>Senha</span>
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" />
+          </label>
+          <p id="loginError" class="form-message error" hidden></p>
+          <button id="loginSubmit" class="primary-button full-width" type="submit">Entrar →</button>
+          <div class="auth-hint">
+            <span class="hint-icon">i</span>
+            <span>Primeiro acesso? Use <strong>admin / admin</strong> e troque a senha logo em seguida.</span>
+          </div>
+          <p class="auth-foot">VDL Studio · sessão local protegida</p>
+        </form>
+      </div>
+    </div>
+
+    <!-- ===================== TROCAR SENHA ===================== -->
+    <div class="auth-view single hidden" id="changePasswordView">
+      <div class="auth-glow auth-glow-a"></div>
+      <form class="auth-card" id="changePasswordForm">
+        <div class="lock-badge">🔒</div>
+        <p class="eyebrow cyan">Segurança</p>
+        <h2>Trocar senha</h2>
+        <p class="muted-text">Defina uma nova senha para o acesso admin. A senha padrão é <strong>admin</strong>.</p>
+        <label class="field">
+          <span>Senha atual</span>
+          <input id="cpCurrent" type="password" autocomplete="current-password" placeholder="senha atual" />
+        </label>
+        <label class="field">
+          <span>Nova senha</span>
+          <input id="cpNew" type="password" autocomplete="new-password" placeholder="nova senha" />
+        </label>
+        <div class="strength" id="cpStrength" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <p id="cpStrengthText" class="strength-text muted-text">Mínimo 8 caracteres.</p>
+        <label class="field">
+          <span>Confirmar nova senha</span>
+          <input id="cpConfirm" type="password" autocomplete="new-password" placeholder="repita a nova senha" />
+        </label>
+        <p id="cpError" class="form-message error" hidden></p>
+        <button id="cpSubmit" class="primary-button full-width" type="submit">Salvar nova senha</button>
+        <button id="cpCancel" class="link-button" type="button">Cancelar e voltar</button>
+      </form>
+    </div>
+
+    <!-- ===================== APP ===================== -->
+    <div class="app-shell hidden" id="appShell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+          <div class="brand">
+            <div class="brand-mark">VDL</div>
+            <div class="brand-copy">
+              <h1>VDL Studio</h1>
+              <p>orquestrador</p>
+            </div>
+          </div>
+          <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="Recolher menu lateral" aria-expanded="true" title="Recolher menu">
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+
+        <nav class="nav-list" aria-label="Seções">
+          <button class="nav-item active" data-panel="library" type="button" title="Biblioteca">
+            <span class="nav-icon">▦</span><span class="nav-label">Biblioteca</span>
+          </button>
+          <button class="nav-item" data-panel="batch" type="button" title="Novo lote">
+            <span class="nav-icon">＋</span><span class="nav-label">Novo lote</span>
+          </button>
+          <button class="nav-item" data-panel="queue" type="button" title="Fila">
+            <span class="nav-icon">≣</span><span class="nav-label">Fila</span>
+          </button>
+          <button class="nav-item" data-panel="jobs" type="button" title="Jobs">
+            <span class="nav-icon">◷</span><span class="nav-label">Jobs</span>
+          </button>
+          <button class="nav-item" data-panel="credentials" type="button" title="Credenciais">
+            <span class="nav-icon">⬡</span><span class="nav-label">Credenciais</span>
+          </button>
+          <button class="nav-item" data-panel="settings" type="button" title="Configurações">
+            <span class="nav-icon">⚙</span><span class="nav-label">Configurações</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="activity-card">
+            <div class="activity-head">
+              <span class="eyebrow">Atividade</span>
+              <span class="led-label"><span class="led"></span> online</span>
+            </div>
+            <p id="sidebarJobSummary">Sem jobs carregados</p>
+          </div>
+          <div class="user-row">
+            <span class="user-avatar">A</span>
+            <span class="user-copy">
+              <strong id="sidebarUser">admin</strong>
+              <small>administrador</small>
+            </span>
+            <button id="logoutButton" class="icon-button" type="button" title="Sair" aria-label="Sair">⎋</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div class="topbar-title">
+            <p class="eyebrow" id="pageEyebrow">VDL Studio</p>
+            <h2 id="pageTitle">Biblioteca</h2>
+            <p id="pageSubtitle" class="page-subtitle">Arquivos baixados, artefatos e contexto gerado.</p>
+          </div>
+          <div class="toolbar">
+            <button id="headerStatusButton" class="status-pill" data-panel-jump="queue" type="button" title="Abrir fila" aria-live="polite">
+              <span class="status-led"></span><span>Servidor</span><strong id="apiHealth">conectando</strong>
+            </button>
+            <label class="runtime-select">
+              <span class="sr-only">Runtime do lote</span>
+              <select id="headerModeSelect" aria-label="Runtime do lote">
+                <option value="none">Sem VPN</option>
+                <option value="cyberghost">CyberGhost</option>
+                <option value="windscribe">Windscribe</option>
+              </select>
+            </label>
+            <button id="headerTestIpButton" class="secondary-button compact-button" type="button">Testar IP</button>
+            <button id="headerLogsButton" class="icon-button" type="button" title="Logs de inicialização" aria-label="Logs de inicialização">◷</button>
+            <span id="headerIpResult" class="header-ip-result">IP não testado</span>
+            <button id="secondaryTopAction" class="secondary-button" type="button">Sincronizar</button>
+            <button id="primaryTopAction" class="primary-button" type="button">Novo lote</button>
+          </div>
+        </header>
+
+        <div class="panels">
+          <!-- BIBLIOTECA -->
+          <section id="libraryPanel" class="panel active-panel" aria-labelledby="pageTitle">
+            <div class="folder-strip surface-panel">
+              <div class="folder-id">
+                <span class="chip cyan">▤</span>
+                <div>
+                  <p class="eyebrow">Destino atual</p>
+                  <div class="folder-path">
+                    <strong id="currentDestinationLabel">/data/downloads</strong>
+                    <span class="badge ready">gravável</span>
+                  </div>
+                </div>
+              </div>
+              <div class="folder-actions">
+                <span id="libraryUpdatedAt" class="muted-text">aguardando sync</span>
+                <button id="browseButton" class="secondary-button" type="button">Trocar pasta</button>
+                <button id="newFolderButton" class="secondary-button" type="button">Nova pasta</button>
+              </div>
+            </div>
+
+            <div class="metric-grid">
+              <article class="metric-card"><span class="chip cyan">▶</span><strong id="metricActive">0</strong><span class="metric-label">Jobs ativos</span><small>em execução</small></article>
+              <article class="metric-card"><span class="chip amber">◴</span><strong id="metricQueued">0</strong><span class="metric-label">Aguardando</span><small>na fila</small></article>
+              <article class="metric-card"><span class="chip green">✓</span><strong id="metricSucceeded">0</strong><span class="metric-label">Concluídos</span><small>últimas 24h</small></article>
+              <article class="metric-card"><span class="chip red">✕</span><strong id="metricFailed">0</strong><span class="metric-label">Falhas</span><small>requer atenção</small></article>
+            </div>
+
+            <div class="library-layout">
+              <section class="surface-panel library-table-panel">
+                <div class="section-head compact">
+                  <div><p class="eyebrow cyan">Arquivos e artefatos</p><h3>Biblioteca</h3></div>
+                  <label class="search-field">
+                    <span class="search-icon">⌕</span>
+                    <input id="librarySearch" placeholder="filtrar por arquivo, status ou modo" />
+                  </label>
+                </div>
+                <div id="libraryTable" class="library-table"></div>
+              </section>
+
+              <aside id="inspectorPanel" class="surface-panel inspector-panel">
+                <p class="eyebrow cyan">Item selecionado</p>
+                <h3 id="inspectorTitle">Nenhum artefato</h3>
+                <p id="inspectorPath" class="muted-text">Crie um lote ou selecione um job.</p>
+                <div class="artifact-list" id="artifactList"></div>
+                <div class="inspector-actions">
+                  <button class="secondary-button" type="button" data-operation-jump="local">Processar pasta</button>
+                  <button class="primary-button" type="button" data-panel-jump="jobs">Abrir jobs</button>
+                </div>
+              </aside>
+            </div>
+          </section>
+
+          <!-- NOVO LOTE -->
+          <section id="batchPanel" class="panel">
+            <div class="operation-switch">
+              <button class="operation-card active" data-operation="download" type="button">
+                <span class="chip">⬇</span>
+                <span class="op-copy"><strong>Download por URLs</strong><small>Cookie obrigatório antes de criar jobs.</small></span>
+              </button>
+              <button class="operation-card" data-operation="local" type="button">
+                <span class="chip">✎</span>
+                <span class="op-copy"><strong>Transcrição por pasta</strong><small>Usa arquivos que já estão no servidor.</small></span>
+              </button>
+            </div>
+
+            <form id="downloadForm" class="batch-layout operation-panel active-operation" data-operation-panel="download">
+              <section class="surface-panel batch-main">
+                <div class="section-head compact">
+                  <div><p class="eyebrow cyan">Download autenticado</p><h3>Token, URLs e destino</h3></div>
+                  <span id="urlCount" class="badge warn">0 válidas</span>
+                </div>
+
+                <label class="field">
+                  <span>Token / cookie obrigatório</span>
+                  <textarea id="cookieInput" rows="4" placeholder="Base64, JSON exportado do navegador ou header Cookie"></textarea>
+                  <span id="cookieHint" class="validation-text error">Token/cookie obrigatório para downloads.</span>
+                </label>
+
+                <div class="credential-actions">
+                  <input id="credentialSummary" value="Nenhum token informado" disabled aria-label="Status da credencial" />
+                  <button id="validateCredentialButton" class="secondary-button" type="button">Validar token</button>
+                </div>
+                <p id="credentialFeedback" class="form-message">Cole o token antes de informar as URLs.</p>
+
+                <label class="field">
+                  <span>URLs</span>
+                  <textarea id="urlsInput" rows="7" placeholder="https://..."></textarea>
+                </label>
+
+                <div class="two-column">
+                  <label class="field">
+                    <span>Destino</span>
+                    <div class="inline-input">
+                      <input id="destinationInput" value="/data/downloads" />
+                      <button type="button" id="browseButtonBatch" class="secondary-button">Escolher</button>
+                    </div>
+                  </label>
+                  <label class="field">
+                    <span>Nome dos arquivos</span>
+                    <input id="filenamePatternInput" value="01-NN automático" disabled />
+                  </label>
+                </div>
+
+                <div class="two-column align-end">
+                  <div class="field">
+                    <span>Execução do lote</span>
+                    <div class="segmented" role="radiogroup" aria-label="Execução do lote">
+                      <button class="segment active" data-execution="sequential" type="button">Sequencial</button>
+                      <button class="segment" data-execution="parallel" type="button">Paralelo leve</button>
+                    </div>
+                  </div>
+                  <label class="field compact-field">
+                    <span>Máximo em paralelo</span>
+                    <input id="concurrencyInput" type="number" min="1" max="4" value="1" />
+                  </label>
+                  <label class="check-row">
+                    <input id="continueAfterFailure" type="checkbox" checked />
+                    <span>Continuar após falha</span>
+                  </label>
+                </div>
+              </section>
+
+              <aside class="surface-panel processing-panel">
+                <div class="section-head compact"><div><p class="eyebrow cyan">Processamento</p><h3>Saídas do job</h3></div></div>
+
+                <div class="field">
+                  <span>Transcrição</span>
+                  <div class="segmented vertical" role="radiogroup" aria-label="Transcrição">
+                    <button class="segment active" data-transcription="none" type="button">Nenhuma</button>
+                    <button class="segment" data-transcription="local" type="button">Local</button>
+                    <button class="segment" data-transcription="openai" type="button">OpenAI</button>
+                  </div>
+                </div>
+
+                <div class="option-stack">
+                  <label class="check-row disabled"><input id="downloadVideo" type="checkbox" checked disabled /><span>Download do vídeo</span></label>
+                  <label class="check-row"><input id="extractAudio" type="checkbox" /><span>Extrair áudio MP3</span></label>
+                  <label class="check-row"><input id="useGpu" type="checkbox" /><span>Usar GPU se disponível</span></label>
+                  <label class="check-row"><input id="generateContext" type="checkbox" /><span>Gerar contexto (.md)</span></label>
+                  <label class="check-row"><input id="generateSubtitles" type="checkbox" /><span>Gerar legendas (.srt)</span></label>
+                  <label class="check-row disabled"><input id="consolidateEbook" type="checkbox" disabled /><span>Consolidar e-book depois</span></label>
+                </div>
+
+                <div id="processingRuleText" class="rule-box">Download simples: opções de transcrição e contexto ficam desativadas.</div>
+                <button id="createBatchButton" class="primary-button full-width" type="submit" disabled>Informe URLs e cookie</button>
+                <p id="formMessage" class="form-message">Informe URLs válidas e o cookie para habilitar o download.</p>
+              </aside>
+            </form>
+
+            <form id="localTranscriptionForm" class="surface-panel local-transcription-panel operation-panel" data-operation-panel="local">
+              <div class="section-head compact">
+                <div><p class="eyebrow cyan">Transcrição por pasta</p><h3>Arquivos locais</h3></div>
+                <span id="localModeSummary" class="badge cyan">Apenas transcrever</span>
+              </div>
+
+              <div class="two-column">
+                <label class="field">
+                  <span>Pasta de entrada</span>
+                  <div class="inline-input">
+                    <input id="localSourceInput" value="/data/downloads" />
+                    <button id="browseLocalSource" class="secondary-button" type="button">Escolher</button>
+                  </div>
+                </label>
+                <label class="field">
+                  <span>Destino dos artefatos</span>
+                  <div class="inline-input">
+                    <input id="localDestinationInput" value="/data/downloads" />
+                    <button id="browseLocalDestination" class="secondary-button" type="button">Escolher</button>
+                  </div>
+                </label>
+              </div>
+
+              <div class="local-options-grid">
+                <div class="field">
+                  <span>Modo</span>
+                  <div class="segmented" role="radiogroup" aria-label="Modo de transcrição local">
+                    <button class="segment active" data-local-processing="transcribe" type="button">Apenas transcrever</button>
+                    <button class="segment" data-local-processing="context" type="button">Transcrever + contexto</button>
+                  </div>
+                </div>
+                <label class="field compact-field">
+                  <span>Modelo Whisper</span>
+                  <select id="localWhisperModel">
+                    <option value="tiny">tiny</option>
+                    <option value="base" selected>base</option>
+                    <option value="small">small</option>
+                    <option value="medium">medium</option>
+                    <option value="large">large</option>
+                  </select>
+                </label>
+                <label class="field compact-field">
+                  <span>Paralelo</span>
+                  <input id="localConcurrencyInput" type="number" min="1" max="2" value="1" />
+                </label>
+                <label class="check-row"><input id="localUseGpu" type="checkbox" /><span>Usar GPU</span></label>
+              </div>
+
+              <div class="submit-row">
+                <button id="createLocalBatchButton" class="primary-button" type="submit">Iniciar transcrição</button>
+                <p id="localFormMessage" class="form-message">Pronto para criar jobs locais.</p>
+              </div>
+            </form>
+          </section>
+
+          <!-- FILA -->
+          <section id="queuePanel" class="panel">
+            <div class="runtime-grid" id="runtimeGrid"></div>
+
+            <div class="control-band surface-panel">
+              <div class="segmented" role="radiogroup" aria-label="Modo de execução">
+                <button class="segment active" data-mode="none" type="button">Sem VPN</button>
+                <button class="segment" data-mode="cyberghost" type="button">CyberGhost</button>
+                <button class="segment" data-mode="windscribe" type="button">Windscribe</button>
+              </div>
+              <div class="action-row">
+                <button id="startRuntime" class="primary-button" type="button">Iniciar</button>
+                <button id="rebuildRuntime" class="secondary-button" type="button">Rebuild</button>
+                <button id="stopRuntime" class="danger-button" type="button">Parar</button>
+                <button id="testIp" class="secondary-button" type="button">Testar IP</button>
+              </div>
+            </div>
+
+            <div class="status-strip" id="ipResult">Nenhum teste de IP executado.</div>
+
+            <section class="surface-panel">
+              <div class="section-head compact">
+                <div><p class="eyebrow cyan">Fila atual</p><h3>Jobs em andamento</h3></div>
+                <button id="refreshQueue" class="secondary-button" type="button">Atualizar</button>
+              </div>
+              <div id="queueTable" class="jobs-table"></div>
+            </section>
+          </section>
+
+          <!-- JOBS -->
+          <section id="jobsPanel" class="panel">
+            <section class="surface-panel">
+              <div class="section-head compact">
+                <div><p class="eyebrow cyan">Histórico</p><h3>Jobs</h3></div>
+                <button id="refreshJobs" class="secondary-button" type="button">Atualizar</button>
+              </div>
+              <div id="jobsTable" class="jobs-table"></div>
+            </section>
+
+            <section class="surface-panel">
+              <div class="section-head compact">
+                <div><p class="eyebrow cyan">Logs</p><h3 id="logsTitle">Runtime selecionado</h3></div>
+                <button id="loadLogs" class="secondary-button" type="button">Carregar logs</button>
+              </div>
+              <pre id="logsOutput" class="logs-output">Sem logs carregados.</pre>
+            </section>
+          </section>
+
+          <!-- CREDENCIAIS -->
+          <section id="credentialsPanel" class="panel">
+            <div class="settings-grid">
+              <section class="surface-panel">
+                <div class="card-head"><span class="chip cyan">⬡</span><div><p class="eyebrow cyan">Cookies</p><h3>Credencial de download</h3></div></div>
+                <p class="muted-text">O VDL aceita cookie em base64, JSON exportado do navegador ou header Cookie puro. O valor é normalizado pelo backend antes do download.</p>
+                <div class="credential-status">
+                  <span class="badge ready">normalização automática</span>
+                  <span class="muted-text">O valor colado no lote é convertido pelo backend antes do download.</span>
+                </div>
+              </section>
+              <section class="surface-panel">
+                <div class="card-head"><span class="chip violet">◷</span><div><p class="eyebrow cyan">OpenAI</p><h3>Transcrição remota</h3></div></div>
+                <p class="muted-text">Configure a chave no ambiente do worker VDL. A UI nunca armazena nem exibe chaves de API.</p>
+                <div class="inline-input">
+                  <input value="sk-•••••••••••••••••••••••" disabled />
+                </div>
+                <div class="credential-status">
+                  <span class="badge cyan">configurada no worker</span>
+                  <button class="secondary-button" type="button" data-panel-jump="settings">Abrir configurações</button>
+                </div>
+              </section>
+            </div>
+            <section class="surface-panel">
+              <div class="card-head"><span class="chip green">A</span><div><p class="eyebrow cyan">Acesso ao painel</p><h3>Login e senha</h3></div></div>
+              <div class="access-row">
+                <div>
+                  <strong>Usuário atual: <span id="credentialsUser">admin</span></strong>
+                  <p class="muted-text">Senha definida no primeiro acesso. Recomendado trocar periodicamente.</p>
+                </div>
+                <div class="access-actions">
+                  <span class="badge amber" id="passwordStatusBadge">senha padrão</span>
+                  <button id="openChangePassword" class="primary-button" type="button">Trocar senha</button>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <!-- CONFIGURAÇÕES -->
+          <section id="settingsPanel" class="panel">
+            <div class="settings-grid">
+              <section class="surface-panel">
+                <div class="card-head"><span class="chip cyan">≣</span><div><p class="eyebrow cyan">Runtime padrão</p><h3 id="runtimeTitle">Sem VPN</h3></div></div>
+                <p class="muted-text">Define qual runtime é selecionado ao abrir um novo lote.</p>
+                <div class="segmented vertical" role="radiogroup" aria-label="Runtime padrão">
+                  <button class="segment active" data-mode="none" type="button">Sem VPN</button>
+                  <button class="segment" data-mode="cyberghost" type="button">CyberGhost</button>
+                  <button class="segment" data-mode="windscribe" type="button">Windscribe</button>
+                </div>
+              </section>
+              <section class="surface-panel">
+                <div class="card-head"><span class="chip violet">⚙</span><div><p class="eyebrow cyan">Aparência</p><h3>Tema e destaque</h3></div></div>
+                <div class="field"><span>Tema</span>
+                  <div class="segmented" role="radiogroup" aria-label="Tema">
+                    <button class="segment active" type="button">Escuro</button>
+                    <button class="segment" type="button" disabled title="Em breve">Claro</button>
+                  </div>
+                </div>
+                <div class="field"><span>Cor de destaque</span>
+                  <div class="swatches">
+                    <button class="swatch selected" style="--c:#23D1E8" type="button" aria-label="Cyan">✓</button>
+                    <button class="swatch" style="--c:#8B7CF6" type="button" aria-label="Violeta"></button>
+                    <button class="swatch" style="--c:#34D399" type="button" aria-label="Verde"></button>
+                    <button class="swatch" style="--c:#F6AF49" type="button" aria-label="Âmbar"></button>
+                  </div>
+                </div>
+              </section>
+              <section class="surface-panel">
+                <div class="card-head"><span class="chip cyan">◷</span><div><p class="eyebrow cyan">Documentação</p><h3>VPN</h3></div></div>
+                <p class="muted-text">CyberGhost e Windscribe são suportadas pelos compose files separados. Veja o guia de configuração.</p>
+                <button id="helpButton" class="secondary-button" type="button">Abrir HOWTO-VPN</button>
+              </section>
+              <section class="surface-panel">
+                <div class="card-head"><span class="chip green">▦</span><div><p class="eyebrow cyan">Sobre</p><h3>VDL Studio</h3></div></div>
+                <div class="about-list">
+                  <div><span>Versão</span><strong>2.0 · build 2026</strong></div>
+                  <div><span>Backend</span><strong>FastAPI · orchestrator</strong></div>
+                  <div><span>Runtime</span><strong>Docker + Gluetun</strong></div>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <!-- ===================== MODAIS ===================== -->
+    <dialog id="previewDialog" class="preview-dialog" aria-labelledby="previewTitle">
+      <div class="dialog-head">
+        <div><p class="eyebrow cyan">Pré-visualização</p><h3 id="previewTitle">Arquivo</h3></div>
+        <button id="closePreviewDialog" class="icon-button" type="button" aria-label="Fechar">✕</button>
+      </div>
+      <div id="previewBody" class="preview-body">
+        <div class="empty-folder"><strong>Nenhum arquivo selecionado</strong><span>Escolha um job concluído para pré-visualizar.</span></div>
+      </div>
+      <div class="dialog-actions preview-actions">
+        <div class="dialog-action-copy"><span>Arquivo</span><strong id="previewPath">-</strong></div>
+        <button id="openPreviewNewTab" class="primary-button" type="button">Abrir em nova aba</button>
+      </div>
+    </dialog>
+
+    <dialog id="fileDialog" aria-labelledby="fileDialogTitle">
+      <div class="dialog-head">
+        <div><p class="eyebrow cyan" id="fileDialogContext">Destino</p><h3 id="fileDialogTitle">Escolher pasta</h3></div>
+        <button id="closeDialog" class="icon-button" type="button" aria-label="Fechar">✕</button>
+      </div>
+      <div class="dialog-body">
+        <div class="dialog-current"><span>Selecionada</span><strong id="dialogPath">/data</strong></div>
+        <nav id="dialogBreadcrumbs" class="dialog-breadcrumbs" aria-label="Caminho atual"></nav>
+        <div class="file-list" id="fileList"></div>
+      </div>
+      <div class="dialog-actions">
+        <button id="upDirectory" class="secondary-button" type="button">Pasta acima</button>
+        <div class="dialog-action-copy"><span>Será aplicado em</span><strong id="dialogSelectedPath">/data</strong></div>
+        <button id="useDirectory" class="primary-button" type="button">Usar esta pasta</button>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <script src="/app.js?v=redesign-2026"></script>
+  </body>
+</html>
