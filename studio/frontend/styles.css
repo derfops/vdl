@@ -268,14 +268,21 @@ h3 { font-size: 17px; line-height: 1.25; font-weight: 700; }
 .search-field .search-icon { color: var(--muted-2); }
 .search-field input { background: none; border: none; outline: none; color: var(--text); font-size: 12px; width: 220px; }
 .library-table { display: flex; flex-direction: column; }
-.library-header, .library-row { display: grid; grid-template-columns: minmax(0, 1fr) 1.2fr 130px 120px 70px; gap: 12px; align-items: center; }
+.library-header, .library-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 110px 90px; gap: 12px; align-items: center; }
 .library-header { padding: 6px 8px 10px; font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted-2); border-bottom: 1px solid var(--line); }
-.library-row { padding: 11px 8px; background: none; text-align: left; color: var(--text); border-bottom: 1px solid var(--line-soft); border-radius: 10px; }
+.library-row { padding: 10px 8px; background: none; text-align: left; color: var(--text); border-bottom: 1px solid var(--line-soft); border-radius: 10px; cursor: pointer; }
 .library-row:hover { background: var(--surface-2); }
-.library-row.selected { background: rgba(35, 209, 232, 0.07); border: 1px solid rgba(35, 209, 232, 0.18); }
-.file-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.file-name strong { font-size: 13px; font-weight: 600; }
-.file-name span { font-size: 11px; color: var(--muted-2); }
+.library-row.is-dir { cursor: pointer; }
+.library-row.is-dir .file-name strong { color: var(--cyan-bright); }
+.library-row.selected { background: rgba(35, 209, 232, 0.07); box-shadow: 0 0 0 1px rgba(35, 209, 232, 0.18) inset; }
+.file-name { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.file-name strong { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-3); color: var(--muted); font-size: 14px; flex: 0 0 auto; }
+.library-row.is-dir .file-ic { background: rgba(35, 209, 232, 0.14); color: var(--cyan-bright); }
+.library-row-action { display: flex; justify-content: flex-end; }
+.folder-id-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.crumb-sep { color: var(--muted-2); align-self: center; }
+#libraryFolderSummary { margin-top: 4px; font-size: 12px; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
 .artifact-tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .artifact-tag { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 7px; background: var(--surface-3); color: var(--muted); border: 1px solid var(--line-soft); }

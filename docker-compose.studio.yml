@@ -1,0 +1,41 @@
+name: vdl-studio
+
+services:
+  vdl-studio-api:
+    build:
+      context: .
+      dockerfile: studio/api/Dockerfile
+    image: vdl-studio-api:latest
+    container_name: vdl-studio-api
+    environment:
+      - TZ=America/Sao_Paulo
+      - VDL_PROJECT_ROOT=${VDL_PROJECT_ROOT:?VDL_PROJECT_ROOT precisa apontar para a raiz local do projeto}
+      - VDL_DATA_ROOT=/data
+      - VDL_STUDIO_STATE_DIR=/data/.vdl-studio-web
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${VDL_PROJECT_ROOT}:${VDL_PROJECT_ROOT}
+      - ./data:/data
+    working_dir: ${VDL_PROJECT_ROOT}
+    ports:
+      - "${VDL_STUDIO_API_PORT:-8788}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+    restart: unless-stopped
+
+  vdl-studio-frontend:
+    build:
+      context: .
+      dockerfile: studio/frontend/Dockerfile
+    image: vdl-studio-frontend:latest
+    container_name: vdl-studio-frontend
+    depends_on:
+      vdl-studio-api:
+        condition: service_healthy
+    ports:
+      - "${VDL_STUDIO_PORT:-8787}:80"
+    restart: unless-stopped

@@ -1,0 +1,24 @@
+name: vdl-novpn
+
+services:
+  vdl-novpn:
+    build:
+      context: .
+    image: vdl-ubuntu:latest
+    container_name: vdl-novpn
+    environment:
+      - TZ=America/Sao_Paulo
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - VDL_TOKEN=${VDL_TOKEN}
+    volumes:
+      - ./data:/data
+      - ${MEDIA_DIR:-./data/storage/media}:/data/storage/media
+      - ./logs:/logs
+      - ./docs/HOWTO.md:/opt/vdl/HOWTO.md:ro
+      - whisper_cache_novpn:/cache/whisper
+    working_dir: /data
+    command: bash -lc "python3 /opt/vdl/checkup.py; [ -f /data/vdl_token.env ] && source /data/vdl_token.env; cat /opt/vdl/HOWTO.md; tail -f /dev/null"
+    restart: unless-stopped
+
+volumes:
+  whisper_cache_novpn:
