@@ -83,6 +83,10 @@ const state = {
   credentialValidated: false,
   credentialValue: "",
   previewUrl: "",
+  libraryPath: "/data/downloads",
+  libraryEntries: [],
+  librarySelectedPath: null,
+  librarySig: "",
   sidebarCollapsed:
     sidebarPreference === null ? window.matchMedia("(max-width: 1040px)").matches : sidebarPreference === "true",
 };
@@ -94,6 +98,10 @@ const fileDialogTargets = {
   destination: {
     eyebrow: "Download",
     title: "Escolher destino",
+  },
+  library: {
+    eyebrow: "Biblioteca",
+    title: "Ir para a pasta",
   },
   localSource: {
     eyebrow: "Transcrição",
@@ -306,6 +314,9 @@ function setPanel(panel) {
   updateTopbar();
   if (panel === "jobs" || panel === "queue" || panel === "library") {
     refreshJobs();
+  }
+  if (panel === "library") {
+    loadLibrary(state.libraryPath);
   }
   if (panel === "queue" || panel === "settings") {
     refreshStatus();
@@ -905,94 +916,200 @@ function renderMetrics() {
   setText("#sidebarJobSummary", `${active} jobs ativos / ${queued} aguardando`);
 }
 
-function renderLibrary() {
+const CATEGORY_LABELS = { video: "Vídeo", audio: "Áudio", legenda: "Legenda", contexto: "Contexto", imagem: "Imagem", outro: "Arquivo" };
+const CATEGORY_GLYPHS = { video: "▶", audio: "♫", legenda: "❝", contexto: "≣", imagem: "▦", outro: "·" };
+
+function fileCategory(name) {
+  const ext = (String(name).split(".").pop() || "").toLowerCase();
+  if (["mp4", "webm", "mov", "m4v", "mkv", "avi", "flv"].includes(ext)) return "video";
+  if (["mp3", "m4a", "wav", "ogg", "aac"].includes(ext)) return "audio";
+  if (["srt", "vtt"].includes(ext)) return "legenda";
+  if (ext === "md") return "contexto";
+  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return "imagem";
+  return "outro";
+}
+
+function fileGlyph(entry) {
+  return entry.type === "directory" ? "▤" : CATEGORY_GLYPHS[fileCategory(entry.name)] || "·";
+}
+
+function formatSize(bytes) {
+  if (bytes == null) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+function canPreviewPath(path) {
+  return previewKind(path) !== "unknown";
+}
+
+async function loadLibrary(path, force = true) {
+  const target = path || state.libraryPath || "/data/downloads";
+  try {
+    const data = await api(`/files?path=${encodeURIComponent(target)}`);
+    const entries = data.entries || [];
+    const sig = `${data.path}|${entries.map((entry) => `${entry.name}:${entry.size}`).join("|")}`;
+    state.libraryPath = data.path;
+    setText("#libraryUpdatedAt", `sync ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`);
+    if (!force && sig === state.librarySig) return; // nada mudou: evita re-render no auto-refresh
+    state.librarySig = sig;
+    state.libraryEntries = entries;
+    renderLibraryBrowser();
+  } catch (error) {
+    state.libraryEntries = [];
+    renderLibraryBreadcrumbs();
+    if ($("#libraryTable")) {
+      $("#libraryTable").innerHTML = `<div class="table-empty error">Não foi possível abrir a pasta: ${escapeHtml(error.message)}</div>`;
+    }
+    renderLibraryInspector(null);
+  }
+}
+
+function renderLibraryBreadcrumbs() {
+  const nav = $("#libraryBreadcrumbs");
+  if (!nav) return;
+  const parts = String(state.libraryPath || "/data").split("/").filter(Boolean);
+  const crumbs = [{ label: "/data", path: "/data" }];
+  let current = "";
+  parts.forEach((part, index) => {
+    current += `/${part}`;
+    if (index > 0) crumbs.push({ label: part, path: current });
+  });
+  nav.innerHTML = crumbs
+    .map(
+      (crumb) =>
+        `<button class="breadcrumb-chip ${crumb.path === state.libraryPath ? "active" : ""}" data-lib-path="${escapeHtml(crumb.path)}" type="button">${escapeHtml(crumb.label)}</button>`,
+    )
+    .join('<span class="crumb-sep">›</span>');
+  $$("[data-lib-path]").forEach((button) => {
+    button.addEventListener("click", () => loadLibrary(button.dataset.libPath));
+  });
+}
+
+function renderLibrarySummary(entries) {
+  const dirs = entries.filter((entry) => entry.type === "directory").length;
+  const counts = {};
+  entries
+    .filter((entry) => entry.type === "file")
+    .forEach((entry) => {
+      const cat = fileCategory(entry.name);
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+  const parts = [`${entries.length} ${entries.length === 1 ? "item" : "itens"}`];
+  if (dirs) parts.push(`${dirs} pasta${dirs > 1 ? "s" : ""}`);
+  [
+    ["video", "vídeo"],
+    ["audio", "áudio"],
+    ["legenda", "legenda"],
+    ["contexto", "contexto"],
+    ["imagem", "imagem"],
+    ["outro", "outro"],
+  ].forEach(([cat, label]) => {
+    if (counts[cat]) parts.push(`${counts[cat]} ${label}${counts[cat] > 1 ? "s" : ""}`);
+  });
+  setText("#libraryFolderSummary", parts.join(" · "));
+}
+
+function entryRowHtml(entry) {
+  const isDir = entry.type === "directory";
+  const selected = !isDir && entry.path === state.librarySelectedPath;
+  const ext = isDir ? "pasta" : (entry.name.split(".").pop() || "arquivo").toLowerCase();
+  const action = isDir
+    ? '<span class="artifact-tag">Abrir</span>'
+    : canPreviewPath(entry.path)
+      ? `<span class="table-action" data-preview-path="${escapeHtml(entry.path)}" data-preview-title="${escapeHtml(entry.name)}">Prévia</span>`
+      : '<span class="muted-text">—</span>';
+  return `
+    <div class="library-row ${isDir ? "is-dir" : ""} ${selected ? "selected" : ""}" data-path="${escapeHtml(entry.path)}" data-type="${entry.type}" title="${escapeHtml(entry.name)}">
+      <span class="file-name"><span class="file-ic">${fileGlyph(entry)}</span><strong>${escapeHtml(entry.name)}</strong></span>
+      <span class="truncate">${escapeHtml(ext)}</span>
+      <span class="truncate">${isDir ? "—" : formatSize(entry.size)}</span>
+      <span class="library-row-action">${action}</span>
+    </div>
+  `;
+}
+
+function renderLibraryBrowser() {
+  renderLibraryBreadcrumbs();
+  const all = state.libraryEntries || [];
+  renderLibrarySummary(all);
   const table = $("#libraryTable");
   if (!table) return;
   const search = ($("#librarySearch")?.value || "").trim().toLowerCase();
-  const jobs = allJobs().filter((job) => {
-    const text = [job.filename, job.destination, job.status, job.processing_mode, job.mode, job.url, job.input_path, job.job_type]
-      .join(" ")
-      .toLowerCase();
-    return !search || text.includes(search);
-  });
-  if (!jobs.length) {
-    table.innerHTML = '<div class="table-empty">Nenhum arquivo encontrado.</div>';
-    renderInspector(null);
+  const entries = all.filter((entry) => !search || entry.name.toLowerCase().includes(search));
+  if (!entries.length) {
+    table.innerHTML = `<div class="table-empty">${search ? "Nada encontrado nesta pasta." : "Pasta vazia."}</div>`;
+    renderLibraryInspector(null);
     return;
   }
-  if (!state.selectedJobId || !jobs.some((job) => job.job_id === state.selectedJobId)) {
-    state.selectedJobId = jobs[0].job_id;
-  }
   table.innerHTML = `
-    <div class="library-header">
-      <span>Arquivo</span><span>Destino</span><span>Status</span><span>Artefatos</span><span>Ação</span>
-    </div>
-    ${jobs
-      .map((job) => {
-        const artifacts = artifactTags(job);
-        return `
-          <button class="library-row ${job.job_id === state.selectedJobId ? "selected" : ""}" data-job-id="${job.job_id}" title="${job.error || job.url}">
-            <span class="file-name">
-              <strong>${job.filename}</strong>
-              <span>${job.job_type === "local" ? "Local" : processingLabel(job.processing_mode)} · ${modes[job.mode]}</span>
-            </span>
-            <span class="truncate">${job.job_type === "local" ? job.input_path || job.url : job.destination}</span>
-            <span><span class="badge ${statusClass(job.status)}">${statusLabel(job.status)}</span></span>
-            <span class="artifact-tags">${artifacts}</span>
-            <span class="artifact-tag">Abrir</span>
-          </button>
-        `;
-      })
-      .join("")}
+    <div class="library-header"><span>Nome</span><span>Tipo</span><span>Tamanho</span><span>Ação</span></div>
+    ${entries.map(entryRowHtml).join("")}
   `;
-  $$(".library-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      state.selectedJobId = row.dataset.jobId;
-      renderLibrary();
+  $$("#libraryTable .library-row").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("[data-preview-path]")) return;
+      if (row.dataset.type === "directory") {
+        state.librarySelectedPath = null;
+        loadLibrary(row.dataset.path);
+      } else {
+        state.librarySelectedPath = row.dataset.path;
+        renderLibraryBrowser();
+      }
     });
   });
-  renderInspector(jobs.find((job) => job.job_id === state.selectedJobId));
+  renderLibraryInspector(entries.find((entry) => entry.path === state.librarySelectedPath) || null);
 }
 
-function artifactTags(job) {
-  const tags = [];
-  if (job.status === "succeeded" && job.job_type !== "local") tags.push("mp4");
-  if (job.processing_mode === "transcribe" || job.processing_mode === "context" || job.processing_mode === "unified") tags.push("txt");
-  if (job.processing_mode === "context" || job.processing_mode === "unified") tags.push("md");
-  if (!tags.length) tags.push("pendente");
-  return tags.map((tag) => `<span class="artifact-tag">${tag}</span>`).join("");
-}
-
-function renderInspector(job) {
-  if (!job) {
-    setText("#inspectorTitle", "Nenhum artefato");
-    setText("#inspectorPath", "Crie um lote ou selecione um job.");
+function renderLibraryInspector(entry) {
+  if (!entry) {
+    setText("#inspectorTitle", "Nenhum item");
+    setText("#inspectorPath", "Selecione um arquivo para ver detalhes.");
     $("#artifactList").innerHTML = "";
     return;
   }
-  setText("#inspectorTitle", job.filename);
-  setText("#inspectorPath", jobInputLabel(job));
-  const items = [
-    ["Status", statusLabel(job.status)],
-    ["Modo", processingLabel(job.processing_mode)],
-    ["Tipo", job.job_type === "local" ? "Local" : "Download"],
-    ["Runtime", modes[job.mode]],
-    ["Atualizado", formatTime(job.updated_at)],
+  const isDir = entry.type === "directory";
+  setText("#inspectorTitle", entry.name);
+  setText("#inspectorPath", entry.path);
+  const rows = [
+    ["Tipo", isDir ? "Pasta" : CATEGORY_LABELS[fileCategory(entry.name)] || "Arquivo"],
+    ["Extensão", isDir ? "—" : `.${(entry.name.split(".").pop() || "").toLowerCase()}`],
+    ["Tamanho", isDir ? "—" : formatSize(entry.size)],
   ];
-  $("#artifactList").innerHTML = items
-    .map(([label, value]) => `<div class="artifact-item"><span>${label}</span><strong>${value}</strong></div>`)
+  $("#artifactList").innerHTML = rows
+    .map(([label, value]) => `<div class="artifact-item"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`)
     .join("");
-  if (canPreviewJob(job)) {
+  if (!isDir && canPreviewPath(entry.path)) {
     $("#artifactList").insertAdjacentHTML(
       "beforeend",
-      `<div class="inspector-preview">${previewButton(job, "Pré-visualizar arquivo")}</div>`,
+      `<div class="inspector-preview"><span class="secondary-button full-width" data-preview-path="${escapeHtml(entry.path)}" data-preview-title="${escapeHtml(entry.name)}">Pré-visualizar</span></div>`,
     );
+  }
+}
+
+async function libraryNewFolder() {
+  const name = window.prompt("Nome da nova pasta");
+  if (!name) return;
+  const clean = name.trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+  if (!clean) return;
+  const base = String(state.libraryPath || "/data").replace(/\/+$/, "");
+  try {
+    const result = await api("/files/directory", { method: "POST", body: JSON.stringify({ path: `${base}/${clean}` }) });
+    await loadLibrary(state.libraryPath);
+    toast(`Pasta criada: <strong>${escapeHtml(result.path)}</strong>`, "ok");
+  } catch (error) {
+    toast(`Falha ao criar pasta: ${escapeHtml(error.message)}`, "error");
   }
 }
 
 function renderJobs() {
   renderMetrics();
-  renderLibrary();
   renderJobsHistory("#jobsTable", state.batches);
   renderQueue(
     "#queueTable",
@@ -1223,25 +1340,6 @@ function syncLocalDestination(path) {
   updateLocalValidation();
 }
 
-async function createDirectory() {
-  const name = window.prompt("Nome da nova pasta");
-  if (!name) return;
-  const clean = name.trim().replace(/^\/+|\/+$/g, "");
-  if (!clean) return;
-  const base = ($("#currentDestinationLabel")?.textContent || "/data").trim() || "/data";
-  const path = `${base === "/data" ? "/data" : base}/${clean}`;
-  try {
-    const result = await api("/files/directory", {
-      method: "POST",
-      body: JSON.stringify({ path }),
-    });
-    syncDestination(result.path);
-    await loadFilePath(parentPath(result.path));
-  } catch (error) {
-    setText("#libraryUpdatedAt", `falha: ${error.message}`);
-  }
-}
-
 function openNewFolderRow() {
   const row = $("#newFolderRow");
   const input = $("#newFolderInput");
@@ -1396,13 +1494,14 @@ function bindEvents() {
   $("#localDestinationInput").addEventListener("input", () => updateLocalValidation());
   $("#localWhisperModel").addEventListener("change", () => updateLocalValidation());
   $("#localUseGpu").addEventListener("change", () => updateLocalValidation());
-  $("#librarySearch").addEventListener("input", renderLibrary);
+  $("#librarySearch").addEventListener("input", renderLibraryBrowser);
   $("#validateCredentialButton").addEventListener("click", validateCredential);
-  $("#browseButton").addEventListener("click", () => openFileDialog($("#currentDestinationLabel").textContent || "/data", "destination"));
+  $("#browseButton").addEventListener("click", () => openFileDialog(state.libraryPath || "/data", "library"));
+  $("#libraryUpDir")?.addEventListener("click", () => loadLibrary(parentPath(state.libraryPath)));
   $("#browseButtonBatch").addEventListener("click", () => openFileDialog($("#destinationInput").value || "/data", "destination"));
   $("#browseLocalSource").addEventListener("click", () => openFileDialog($("#localSourceInput").value || "/data", "localSource"));
   $("#browseLocalDestination").addEventListener("click", () => openFileDialog($("#localDestinationInput").value || "/data", "localDestination"));
-  $("#newFolderButton").addEventListener("click", createDirectory);
+  $("#newFolderButton").addEventListener("click", libraryNewFolder);
   $("#dialogNewFolder")?.addEventListener("click", openNewFolderRow);
   $("#newFolderRow")?.addEventListener("submit", submitNewFolder);
   $("#newFolderCancel")?.addEventListener("click", closeNewFolderRow);
@@ -1424,6 +1523,8 @@ function bindEvents() {
       syncLocalSource(state.currentFilePath);
     } else if (state.fileDialogTarget === "localDestination") {
       syncLocalDestination(state.currentFilePath);
+    } else if (state.fileDialogTarget === "library") {
+      loadLibrary(state.currentFilePath);
     } else {
       syncDestination(state.currentFilePath);
     }
@@ -1652,8 +1753,14 @@ async function startApp() {
   });
   await refreshStatus();
   await refreshJobs();
+  await loadLibrary(state.libraryPath);
   refreshTimers.push(setInterval(refreshStatus, 6000));
   refreshTimers.push(setInterval(refreshJobs, 4000));
+  refreshTimers.push(
+    setInterval(() => {
+      if (state.selectedPanel === "library") loadLibrary(state.libraryPath, false);
+    }, 6000),
+  );
 }
 
 function init() {

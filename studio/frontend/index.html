@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VDL Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=redesign-2026-4" />
+    <link rel="stylesheet" href="/styles.css?v=redesign-2026-5" />
   </head>
   <body>
     <!-- ===================== LOGIN ===================== -->
@@ -172,17 +172,15 @@
             <div class="folder-strip surface-panel">
               <div class="folder-id">
                 <span class="chip cyan">▤</span>
-                <div>
-                  <p class="eyebrow">Destino atual</p>
-                  <div class="folder-path">
-                    <strong id="currentDestinationLabel">/data/downloads</strong>
-                    <span class="badge ready">gravável</span>
-                  </div>
+                <div class="folder-id-copy">
+                  <p class="eyebrow">Pasta atual</p>
+                  <nav id="libraryBreadcrumbs" class="dialog-breadcrumbs" aria-label="Caminho atual"></nav>
                 </div>
               </div>
               <div class="folder-actions">
                 <span id="libraryUpdatedAt" class="muted-text">aguardando sync</span>
-                <button id="browseButton" class="secondary-button" type="button">Trocar pasta</button>
+                <button id="libraryUpDir" class="secondary-button" type="button">Pasta acima</button>
+                <button id="browseButton" class="secondary-button" type="button">Ir para…</button>
                 <button id="newFolderButton" class="secondary-button" type="button">Nova pasta</button>
               </div>
             </div>
@@ -197,10 +195,10 @@
             <div class="library-layout">
               <section class="surface-panel library-table-panel">
                 <div class="section-head compact">
-                  <div><p class="eyebrow cyan">Arquivos e artefatos</p><h3>Biblioteca</h3></div>
+                  <div><p class="eyebrow cyan">Arquivos da pasta</p><h3>Biblioteca</h3><p id="libraryFolderSummary" class="muted-text">—</p></div>
                   <label class="search-field">
                     <span class="search-icon">⌕</span>
-                    <input id="librarySearch" placeholder="filtrar por arquivo, status ou modo" />
+                    <input id="librarySearch" placeholder="filtrar por nome do arquivo" />
                   </label>
                 </div>
                 <div id="libraryTable" class="library-table"></div>
@@ -208,8 +206,8 @@
 
               <aside id="inspectorPanel" class="surface-panel inspector-panel">
                 <p class="eyebrow cyan">Item selecionado</p>
-                <h3 id="inspectorTitle">Nenhum artefato</h3>
-                <p id="inspectorPath" class="muted-text">Crie um lote ou selecione um job.</p>
+                <h3 id="inspectorTitle">Nenhum item</h3>
+                <p id="inspectorPath" class="muted-text">Selecione um arquivo para ver detalhes.</p>
                 <div class="artifact-list" id="artifactList"></div>
                 <div class="inspector-actions">
                   <button class="secondary-button" type="button" data-operation-jump="local">Processar pasta</button>
@@ -556,6 +554,6 @@
 
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-    <script src="/app.js?v=redesign-2026-4"></script>
+    <script src="/app.js?v=redesign-2026-5"></script>
   </body>
 </html>
