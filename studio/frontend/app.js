@@ -83,7 +83,7 @@ const state = {
   credentialValidated: false,
   credentialValue: "",
   previewUrl: "",
-  libraryPath: "/data/downloads",
+  libraryPath: "/data/storage",
   libraryEntries: [],
   librarySelectedPath: null,
   librarySig: "",

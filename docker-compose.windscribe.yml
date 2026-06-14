@@ -38,7 +38,7 @@ services:
       - VDL_TOKEN=${VDL_TOKEN}
     volumes:
       - ./data:/data
-      - ${MEDIA_DIR:-./data/storage/media}:/data/storage/media
+      - ${STORAGE_DIR:-./data/storage}:/data/storage
       - ./logs:/logs
       - ./docs/HOWTO.md:/opt/vdl/HOWTO.md:ro
       - whisper_cache_windscribe:/cache/whisper
