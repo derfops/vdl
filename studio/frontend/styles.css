@@ -127,6 +127,18 @@ h3 { font-size: 17px; line-height: 1.25; font-weight: 700; }
 .check-row input:checked::after { content: "✓"; color: var(--cyan-bright); font-size: 11px; font-weight: 700; }
 .check-row.disabled { opacity: 0.5; }
 .option-stack { display: flex; flex-direction: column; gap: 13px; }
+.option-stack .eyebrow { margin-top: 4px; }
+.option-stack .eyebrow:first-child { margin-top: 0; }
+.check-copy { display: flex; flex-direction: column; gap: 1px; }
+.check-copy strong { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.check-copy small { font-size: 11.5px; color: var(--muted-2); line-height: 1.35; }
+.check-row:has(.check-copy) { align-items: flex-start; }
+.check-row:has(.check-copy) input { margin-top: 2px; }
+.field-hint { font-size: 11.5px; color: var(--muted-2); line-height: 1.4; }
+.step-num { font-weight: 600; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted-2); margin-left: 6px; }
+.pipeline-box { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 12px; background: rgba(35, 209, 232, 0.06); border: 1px solid rgba(35, 209, 232, 0.2); }
+.pipeline-label { font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); }
+.pipeline-box strong { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.6; }
 
 .surface-panel, .metric-card, .runtime-card, .operation-card, .activity-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card);
@@ -365,6 +377,9 @@ dialog::backdrop { background: rgba(5, 7, 10, 0.6); backdrop-filter: blur(2px); 
 .file-entry-main strong { font-size: 13.5px; }
 .file-entry-main small { font-size: 11px; color: var(--muted-2); }
 .dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.dialog-actions-left { display: flex; gap: 10px; }
+.new-folder-row { display: flex; gap: 8px; align-items: center; }
+.new-folder-row input { flex: 1; background: var(--surface-2); border: 1px solid var(--accent); color: var(--text); border-radius: var(--r-input); padding: 10px 14px; font-size: 14px; outline: none; }
 .empty-folder { display: flex; flex-direction: column; gap: 4px; padding: 24px; text-align: center; color: var(--muted-2); }
 .empty-folder strong { color: var(--text); }
 .empty-folder.error strong { color: var(--red); }

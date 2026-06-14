@@ -380,7 +380,31 @@ function setTranscription(mode) {
     button.classList.toggle("active", button.dataset.transcription === mode);
   });
   applyProcessingRules();
+  updateTranscriptionHint();
+  updatePipelineSummary();
   updateDownloadValidation();
+}
+
+function updateTranscriptionHint() {
+  const hints = {
+    none: "Apenas baixa o vídeo, sem gerar texto.",
+    local: "Transcreve no servidor com Whisper (offline). Permite legendas e contexto.",
+    openai: "Transcreve via OpenAI (modo unificado). Requer OPENAI_API_KEY no worker.",
+  };
+  setText("#transcriptionHint", hints[state.transcriptionMode] || "");
+}
+
+function updatePipelineSummary() {
+  const t = state.transcriptionMode;
+  const steps = ["Baixar vídeo"];
+  if (t !== "none" || $("#extractAudio")?.checked) steps.push("extrair MP3");
+  if (t === "local") steps.push("transcrever (Whisper local)");
+  else if (t === "openai") steps.push("transcrever (OpenAI)");
+  const outputs = [];
+  if ($("#generateSubtitles")?.checked) outputs.push(".srt");
+  if ($("#generateContext")?.checked) outputs.push(".md");
+  if (outputs.length) steps.push(`gerar ${outputs.join(" + ")}`);
+  setText("#pipelineFlow", steps.join("  →  "));
 }
 
 function setLocalProcessing(mode) {
@@ -823,7 +847,7 @@ async function createBatch(event) {
       body: JSON.stringify(payload),
     });
     setMessage("#formMessage", `Lote ${batch.batch_id} · ${batch.jobs.length} job(s) criados.`, "ready");
-    toast(`Lote <strong>${escapeHtml(batch.batch_id)}</strong> criado · ${batch.jobs.length} job(s)`, "ok");
+    toast(`Lote <strong>${escapeHtml(batch.batch_id)}</strong> criado · ${batch.jobs.length} job(s) · 📁 ${escapeHtml(batch.destination || "")}`, "ok");
     state.selectedJobId = batch.jobs[0]?.job_id || null;
     setPanel("jobs");
     await refreshJobs();
@@ -859,7 +883,7 @@ async function createLocalTranscriptionBatch(event) {
       body: JSON.stringify(payload),
     });
     setMessage("#localFormMessage", `Lote ${batch.batch_id} · ${batch.jobs.length} job(s) locais.`, "ready");
-    toast(`Lote <strong>${escapeHtml(batch.batch_id)}</strong> criado · ${batch.jobs.length} job(s) locais`, "ok");
+    toast(`Lote <strong>${escapeHtml(batch.batch_id)}</strong> criado · ${batch.jobs.length} job(s) locais · 📁 ${escapeHtml(batch.destination || "")}`, "ok");
     state.selectedJobId = batch.jobs[0]?.job_id || null;
     setPanel("jobs");
     await refreshJobs();
@@ -974,7 +998,31 @@ function renderJobs() {
     "#queueTable",
     allJobs().filter((job) => ["queued", "running", "blocked"].includes(job.status)),
   );
+  checkBatchCompletion();
   setText("#libraryUpdatedAt", `sync ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`);
+}
+
+const TERMINAL_STATUSES = ["succeeded", "failed", "blocked"];
+
+function checkBatchCompletion() {
+  if (!state.batchDoneSeen) state.batchDoneSeen = new Set();
+  const firstRun = !state.batchReportInit;
+  state.batches.forEach((batch) => {
+    const jobs = batch.jobs || [];
+    if (!jobs.length) return;
+    const done = jobs.every((job) => TERMINAL_STATUSES.includes(job.status));
+    if (!done || state.batchDoneSeen.has(batch.batch_id)) return;
+    state.batchDoneSeen.add(batch.batch_id);
+    if (firstRun) return; // não reporta lotes já concluídos na carga inicial
+    const ok = jobs.filter((job) => job.status === "succeeded").length;
+    const fail = jobs.length - ok;
+    const where = batch.destination ? ` · 📁 ${escapeHtml(batch.destination)}` : "";
+    toast(
+      `Lote <strong>${escapeHtml(batch.batch_id)}</strong> concluído · ${ok} ok${fail ? ` / ${fail} falha(s)` : ""}${where}`,
+      fail ? "error" : "ok",
+    );
+  });
+  state.batchReportInit = true;
 }
 
 function jobRowHtml(job) {
@@ -1008,7 +1056,8 @@ function renderJobsHistory(selector, batches) {
   table.innerHTML = sorted
     .map((batch) => {
       const jobs = batch.jobs || [];
-      const meta = `${escapeHtml(modes[batch.mode] || batch.mode)} · ${escapeHtml(processingLabel(batch.processing_mode))} · ${jobs.length} job(s) · ${escapeHtml(formatTime(batch.created_at))}`;
+      const dest = batch.destination ? ` · 📁 ${escapeHtml(batch.destination)}` : "";
+      const meta = `${escapeHtml(modes[batch.mode] || batch.mode)} · ${escapeHtml(processingLabel(batch.processing_mode))} · ${jobs.length} job(s)${dest} · ${escapeHtml(formatTime(batch.created_at))}`;
       const head = `
         <div class="batch-group-head">
           <span class="chip cyan" style="width:28px;height:28px;font-size:13px;border-radius:8px">▦</span>
@@ -1082,6 +1131,7 @@ async function openFileDialog(path = "/data", target = "destination") {
   const meta = fileDialogTargets[target] || fileDialogTargets.destination;
   setText("#fileDialogContext", meta.eyebrow);
   setText("#fileDialogTitle", meta.title);
+  closeNewFolderRow();
   $("#fileDialog").showModal();
   await loadFilePath(path);
 }
@@ -1192,6 +1242,45 @@ async function createDirectory() {
   }
 }
 
+function openNewFolderRow() {
+  const row = $("#newFolderRow");
+  const input = $("#newFolderInput");
+  if (!row || !input) return;
+  row.classList.remove("hidden");
+  input.value = "";
+  input.focus();
+}
+
+function closeNewFolderRow() {
+  $("#newFolderRow")?.classList.add("hidden");
+}
+
+async function submitNewFolder(event) {
+  event?.preventDefault();
+  const input = $("#newFolderInput");
+  const clean = (input?.value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+  if (!clean) {
+    input?.focus();
+    return;
+  }
+  const base = String(state.currentFilePath || "/data").replace(/\/+$/, "");
+  const path = `${base}/${clean}`;
+  try {
+    const result = await api("/files/directory", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+    closeNewFolderRow();
+    await loadFilePath(result.path); // entra na pasta recém-criada (vira o destino)
+    toast(`Pasta criada: <strong>${escapeHtml(result.path)}</strong>`, "ok");
+  } catch (error) {
+    const list = $("#fileList");
+    if (list) {
+      list.innerHTML = `<div class="empty-folder error"><strong>Não foi possível criar a pasta</strong><span>${escapeHtml(error.message)}</span></div>`;
+    }
+  }
+}
+
 function clearActiveOperation() {
   if (state.operationMode === "download") {
     $("#urlsInput").value = "";
@@ -1297,6 +1386,12 @@ function bindEvents() {
   $("#urlsInput").addEventListener("input", () => updateDownloadValidation());
   $("#destinationInput").addEventListener("input", () => updateDownloadValidation());
   $("#cookieInput").addEventListener("input", () => updateDownloadValidation());
+  ["extractAudio", "generateContext", "generateSubtitles", "useGpu"].forEach((id) => {
+    $(`#${id}`)?.addEventListener("change", () => {
+      updateDownloadValidation();
+      updatePipelineSummary();
+    });
+  });
   $("#localSourceInput").addEventListener("input", () => updateLocalValidation());
   $("#localDestinationInput").addEventListener("input", () => updateLocalValidation());
   $("#localWhisperModel").addEventListener("change", () => updateLocalValidation());
@@ -1308,6 +1403,9 @@ function bindEvents() {
   $("#browseLocalSource").addEventListener("click", () => openFileDialog($("#localSourceInput").value || "/data", "localSource"));
   $("#browseLocalDestination").addEventListener("click", () => openFileDialog($("#localDestinationInput").value || "/data", "localDestination"));
   $("#newFolderButton").addEventListener("click", createDirectory);
+  $("#dialogNewFolder")?.addEventListener("click", openNewFolderRow);
+  $("#newFolderRow")?.addEventListener("submit", submitNewFolder);
+  $("#newFolderCancel")?.addEventListener("click", closeNewFolderRow);
   $("#closeDialog").addEventListener("click", () => $("#fileDialog").close());
   $("#closePreviewDialog").addEventListener("click", closePreview);
   $("#previewDialog").addEventListener("cancel", () => closePreview());
