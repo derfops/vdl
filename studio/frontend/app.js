@@ -290,7 +290,10 @@ function updateNavState() {
   $$(".nav-item").forEach((button) => {
     const isPanelActive = button.dataset.panel === state.selectedPanel;
     const operation = button.dataset.operation;
-    button.classList.toggle("active", isPanelActive && (!operation || operation === state.operationMode));
+    const active = isPanelActive && (!operation || operation === state.operationMode);
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   });
 }
 
@@ -889,7 +892,7 @@ function renderLibrary() {
     return !search || text.includes(search);
   });
   if (!jobs.length) {
-    table.innerHTML = '<div class="status-strip">Nenhum arquivo encontrado.</div>';
+    table.innerHTML = '<div class="table-empty">Nenhum arquivo encontrado.</div>';
     renderInspector(null);
     return;
   }
@@ -998,7 +1001,7 @@ function renderJobsHistory(selector, batches) {
   const table = $(selector);
   if (!table) return;
   if (!batches.length) {
-    table.innerHTML = '<div class="status-strip">Nenhum lote criado ainda.</div>';
+    table.innerHTML = '<div class="table-empty">Nenhum lote criado ainda.</div>';
     return;
   }
   const sorted = [...batches].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
@@ -1035,7 +1038,7 @@ function renderQueue(selector, jobs) {
   const table = $(selector);
   if (!table) return;
   if (!jobs.length) {
-    table.innerHTML = '<div class="status-strip">Nenhum job em andamento.</div>';
+    table.innerHTML = '<div class="table-empty">Nenhum job em andamento.</div>';
     return;
   }
   table.innerHTML = `
@@ -1066,9 +1069,10 @@ async function refreshJobs() {
     state.batches = data.batches || [];
     renderJobs();
   } catch (error) {
-    const message = `<div class="status-strip">Falha ao carregar jobs: ${error.message}</div>`;
-    if ($("#jobsTable")) $("#jobsTable").innerHTML = message;
-    if ($("#queueTable")) $("#queueTable").innerHTML = message;
+    const message = `<div class="table-empty error">Falha ao carregar jobs: ${escapeHtml(error.message)}</div>`;
+    ["#jobsTable", "#queueTable", "#libraryTable"].forEach((sel) => {
+      if ($(sel)) $(sel).innerHTML = message;
+    });
   }
 }
 
@@ -1307,6 +1311,12 @@ function bindEvents() {
   $("#closeDialog").addEventListener("click", () => $("#fileDialog").close());
   $("#closePreviewDialog").addEventListener("click", closePreview);
   $("#previewDialog").addEventListener("cancel", () => closePreview());
+  $("#previewDialog").addEventListener("click", (event) => {
+    if (event.target === $("#previewDialog")) closePreview();
+  });
+  $("#fileDialog").addEventListener("click", (event) => {
+    if (event.target === $("#fileDialog")) $("#fileDialog").close();
+  });
   $("#openPreviewNewTab").addEventListener("click", () => {
     if (state.previewUrl) window.open(state.previewUrl, "_blank", "noopener");
   });
@@ -1538,6 +1548,10 @@ async function startApp() {
   setOperation(state.operationMode);
   updateDownloadValidation();
   updateLocalValidation();
+  const loading = '<div class="loading-row"><span class="spinner"></span> Carregando…</div>';
+  ["#libraryTable", "#jobsTable", "#queueTable", "#runtimeGrid"].forEach((sel) => {
+    if ($(sel)) $(sel).innerHTML = loading;
+  });
   await refreshStatus();
   await refreshJobs();
   refreshTimers.push(setInterval(refreshStatus, 6000));
