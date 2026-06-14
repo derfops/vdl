@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VDL Studio</title>
-    <link rel="stylesheet" href="/styles.css?v=redesign-2026" />
+    <link rel="stylesheet" href="/styles.css?v=redesign-2026-4" />
   </head>
   <body>
     <!-- ===================== LOGIN ===================== -->
@@ -293,21 +293,30 @@
                 <div class="section-head compact"><div><p class="eyebrow cyan">Processamento</p><h3>Saídas do job</h3></div></div>
 
                 <div class="field">
-                  <span>Transcrição</span>
+                  <span>Transcrição <small class="step-num">passo 2</small></span>
                   <div class="segmented vertical" role="radiogroup" aria-label="Transcrição">
                     <button class="segment active" data-transcription="none" type="button">Nenhuma</button>
-                    <button class="segment" data-transcription="local" type="button">Local</button>
+                    <button class="segment" data-transcription="local" type="button">Local (Whisper)</button>
                     <button class="segment" data-transcription="openai" type="button">OpenAI</button>
                   </div>
+                  <p id="transcriptionHint" class="field-hint">Apenas baixa o vídeo, sem gerar texto.</p>
                 </div>
 
                 <div class="option-stack">
-                  <label class="check-row disabled"><input id="downloadVideo" type="checkbox" checked disabled /><span>Download do vídeo</span></label>
-                  <label class="check-row"><input id="extractAudio" type="checkbox" /><span>Extrair áudio MP3</span></label>
-                  <label class="check-row"><input id="useGpu" type="checkbox" /><span>Usar GPU se disponível</span></label>
-                  <label class="check-row"><input id="generateContext" type="checkbox" /><span>Gerar contexto (.md)</span></label>
-                  <label class="check-row"><input id="generateSubtitles" type="checkbox" /><span>Gerar legendas (.srt)</span></label>
-                  <label class="check-row disabled"><input id="consolidateEbook" type="checkbox" disabled /><span>Consolidar e-book depois</span></label>
+                  <p class="eyebrow">Passo 1 · Mídia</p>
+                  <label class="check-row disabled"><input id="downloadVideo" type="checkbox" checked disabled /><span class="check-copy"><strong>Download do vídeo</strong><small>baixa o .mp4 original (sempre)</small></span></label>
+                  <label class="check-row"><input id="extractAudio" type="checkbox" /><span class="check-copy"><strong>Extrair áudio MP3</strong><small>separa a trilha de áudio — é o que será transcrito</small></span></label>
+                  <label class="check-row"><input id="useGpu" type="checkbox" /><span class="check-copy"><strong>Usar GPU se disponível</strong><small>acelera a transcrição local</small></span></label>
+
+                  <p class="eyebrow">Passo 3 · Saídas de texto</p>
+                  <label class="check-row"><input id="generateSubtitles" type="checkbox" /><span class="check-copy"><strong>Gerar legendas (.srt)</strong><small>a transcrição com marcações de tempo</small></span></label>
+                  <label class="check-row"><input id="generateContext" type="checkbox" /><span class="check-copy"><strong>Gerar contexto (.md)</strong><small>resumo em markdown a partir da transcrição</small></span></label>
+                  <label class="check-row disabled"><input id="consolidateEbook" type="checkbox" disabled /><span class="check-copy"><strong>Consolidar e-book depois</strong><small>junta os contextos num só documento</small></span></label>
+                </div>
+
+                <div class="pipeline-box">
+                  <span class="pipeline-label">Fluxo deste lote</span>
+                  <strong id="pipelineFlow">Baixar vídeo</strong>
                 </div>
 
                 <div id="processingRuleText" class="rule-box">Download simples: opções de transcrição e contexto ficam desativadas.</div>
@@ -528,10 +537,18 @@
       <div class="dialog-body">
         <div class="dialog-current"><span>Selecionada</span><strong id="dialogPath">/data</strong></div>
         <nav id="dialogBreadcrumbs" class="dialog-breadcrumbs" aria-label="Caminho atual"></nav>
+        <form id="newFolderRow" class="new-folder-row hidden">
+          <input id="newFolderInput" placeholder="nome da nova pasta" autocomplete="off" />
+          <button id="newFolderConfirm" class="primary-button" type="submit">Criar</button>
+          <button id="newFolderCancel" class="secondary-button" type="button">Cancelar</button>
+        </form>
         <div class="file-list" id="fileList"></div>
       </div>
       <div class="dialog-actions">
-        <button id="upDirectory" class="secondary-button" type="button">Pasta acima</button>
+        <div class="dialog-actions-left">
+          <button id="upDirectory" class="secondary-button" type="button">Pasta acima</button>
+          <button id="dialogNewFolder" class="secondary-button" type="button">＋ Nova pasta</button>
+        </div>
         <div class="dialog-action-copy"><span>Será aplicado em</span><strong id="dialogSelectedPath">/data</strong></div>
         <button id="useDirectory" class="primary-button" type="button">Usar esta pasta</button>
       </div>
@@ -539,6 +556,6 @@
 
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-    <script src="/app.js?v=redesign-2026"></script>
+    <script src="/app.js?v=redesign-2026-4"></script>
   </body>
 </html>
