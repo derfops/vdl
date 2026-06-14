@@ -16,6 +16,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${VDL_PROJECT_ROOT}:${VDL_PROJECT_ROOT}
       - ./data:/data
+      - ${STORAGE_DIR:-./data/storage}:/data/storage
     working_dir: ${VDL_PROJECT_ROOT}
     ports:
       - "${VDL_STUDIO_API_PORT:-8788}:8000"
