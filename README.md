@@ -34,8 +34,8 @@ cd /caminho/para/vdl
 # Instale as bibliotecas necessárias
 pip install -r requirements.txt
 
-# Dê permissão de execução ao script
-chmod +x vdl
+# Dê permissão de execução aos launchers
+chmod +x vdl.py vdl.sh manage.sh
 ```
 
 ---
@@ -53,7 +53,7 @@ O script oferece duas formas de autenticação, com prioridade para a variável 
     codifique em Base64 e exporte:
     ```bash
     # Linux/macOS
-    export VDL_TOKEN="$(cat cookies.json | base64 -w0)"
+    export VDL_TOKEN="$(base64 < cookies.json | tr -d '\n')"
     ```
 
 -   **(Alternativa) Arquivo de cookies no diretório do script ou no CWD**:
@@ -77,17 +77,118 @@ Para usar as funcionalidades de IA que se conectam à OpenAI (`-c` ou `-u`), def
 
 ```bash
 # Exemplo para Linux/macOS
-export OPENAI_API_TOKEN="seu_token_sk-xxxxxxxx_aqui"
+export OPENAI_API_KEY="seu_token_sk-xxxxxxxx_aqui"
 ```
 
 ---
 
 ## 💻 Como Usar
 
+### Launcher Docker: `vdl.sh`
+
+O launcher principal do projeto é o `vdl.sh`. Sem argumentos ele abre um menu
+interativo para subir, derrubar, reconstruir, abrir shell, consultar logs e
+testar o IP dos stacks CyberGhost e Windscribe.
+
+```bash
+./vdl.sh
+./vdl.sh --help
+./manage.sh --help
+```
+
+O `manage.sh` continua existindo como alias de compatibilidade, mas o caminho
+recomendado é usar `./vdl.sh`.
+
+### VDL Studio Web
+
+O VDL Studio Web sobe como frontend separado e usa uma API local para
+orquestrar os runtimes VDL. A tela inicial permite escolher:
+
+- `Sem VPN`
+- `CyberGhost`
+- `Windscribe`
+
+Suba o Studio:
+
+```bash
+./vdl.sh studio
+```
+
+Acesse:
+
+```text
+http://localhost:8787
+```
+
+O HOWTO específico das VPNs está em `docs/HOWTO-VPN.md`.
+
+### Docker com VPN CyberGhost
+
+O `docker-compose.yml` padrão sobe o VDL atrás do Gluetun. O serviço `vdl`
+usa `network_mode: service:vpn-vdl`, então todo tráfego sai pela VPN.
+
+Prepare o `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Preencha `OPENVPN_USER` e `OPENVPN_PASSWORD`. O `vdl.sh` prepara os arquivos do
+OpenVPN a partir de `glutenn_openvpn.zip` quando necessário:
+
+```bash
+./vdl.sh up
+```
+
+Verifique:
+
+```bash
+docker compose ps
+docker logs gluetun --tail=80
+docker exec vdl curl -s ifconfig.me
+```
+
+Alternativa Windscribe/WireGuard:
+
+```bash
+./vdl.sh up-windscribe
+docker exec vdl-windscribe curl -s ifconfig.me
+```
+
+Esse modo usa `docker-compose.windscribe.yml` e o arquivo local
+`Windscribe-StaticIP-WG.conf`.
+
+### Modo Interativo: VDL Studio
+
+Dentro do container, execute sem argumentos para abrir o menu guiado do VDL
+Studio. Pelo launcher Docker, use `./vdl.sh studio` ou escolha a opção no menu:
+
+```bash
+vdl
+vdl --help
+```
+
+O VDL Studio permite escolher:
+
+- `Download em lote`
+- `Retomar lote de download`
+- `Gerar legendas`
+- `Gerar contexto`
+- `Consolidar em e-book`
+
+No fluxo de download em lote, o terminal aceita cookie/token em Base64,
+cookies JSON puros ou header `Cookie` puro, pede o diretório de destino,
+aceita URLs em múltiplas linhas finalizadas por `END`, cria uma fila local em
+`.vdl-studio` e nomeia os arquivos automaticamente como `01.mp4`, `02.mp4`,
+etc. O lote pode rodar com 1 a 4 jobs simultâneos e pode ser retomado pelo
+menu `Retomar lote de download` sem salvar credenciais em disco.
+
+### Modo por Argumentos
+
 O formato básico do comando é:
 
 ```bash
-./vdl <URL> <nome_do_arquivo.mp4> [opções]
+vdl <URL> <nome_do_arquivo.mp4> [opções]
 ```
 
 ### Exemplos Práticos
@@ -95,20 +196,21 @@ O formato básico do comando é:
 #### 📥 **Exemplo 1: Apenas Baixar o Vídeo e o Áudio**
 O caso de uso mais simples.
 ```bash
-./vdl "https://url.do.video/playlist.m3u8?token=..." "aula_01.mp4"
+vdl "https://url.do.video/playlist.m3u8?token=..." "aula_01.mp4"
 ```
 > **Resultado**: Salva `output_dir/aula_01.mp4` e `output_dir/aula_01.mp3`.
 
 #### 📝 **Exemplo 2: Transcrição Local com Modelo Específico**
 Use a flag `-t` para transcrever localmente, escolhendo um modelo maior para mais precisão.
 ```bash
-./vdl "URL_DO_VIDEO" "aula_02.mp4" -t --whisper-model medium```
+vdl "URL_DO_VIDEO" "aula_02.mp4" -t --whisper-model medium
+```
 > **Resultado**: Salva o vídeo, o áudio e a transcrição em `output_dir/transcriptions/aula_02.txt`.
 
 #### 🧠 **Exemplo 3: Modo Unificado (A Forma Mais Fácil de Ter Tudo)**
 Use a flag `-u` para que a API da OpenAI cuide de tudo: transcrição e geração de contexto.
 ```bash
-./vdl "URL_DA_REUNIAO" "reuniao_semanal.mp4" -u -d ./reunioes
+vdl "URL_DA_REUNIAO" "reuniao_semanal.mp4" -u -d ./reunioes
 ```
 > **Resultado**: Salva os arquivos nos subdiretórios do diretório `reunioes/`:
 > - `reunioes/reuniao_semanal.mp4`
@@ -119,7 +221,7 @@ Use a flag `-u` para que a API da OpenAI cuide de tudo: transcrição e geraçã
 #### ⚡ **Exemplo 4: Máxima Performance Local**
 Combine a transcrição local (`-t`) com a geração de contexto (`-c`) e aceleração por GPU (`--gpu`).
 ```bash
-./vdl "URL_COMPLEXA" "tutorial_avancado.mp4" -c --gpu
+vdl "URL_COMPLEXA" "tutorial_avancado.mp4" -c --gpu
 ```
 > **Resultado**: Gera todos os arquivos, mas a transcrição é processada na sua GPU, o que pode ser significativamente mais rápido.
 
