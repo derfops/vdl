@@ -346,6 +346,17 @@ h3 { font-size: 17px; line-height: 1.25; font-weight: 700; }
 .batch-action:hover { border-color: var(--accent); color: var(--cyan-bright); }
 .batch-action.danger { background: rgba(243, 82, 82, 0.10); border-color: rgba(243, 82, 82, 0.35); color: var(--red); }
 .batch-action.danger:hover { border-color: var(--red); color: var(--red); }
+
+.field-hint-inline { font-weight: 400; font-size: 11px; color: var(--muted-2); margin-left: 6px; }
+.name-preview { margin: 4px 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); max-height: 220px; overflow-y: auto; }
+.name-preview-head { position: sticky; top: 0; background: var(--surface-3); padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--cyan-bright); letter-spacing: .04em; text-transform: uppercase; }
+.name-preview-row { display: grid; grid-template-columns: 28px 1fr 16px 1.1fr; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; border-top: 1px solid var(--line); }
+.name-preview-idx { color: var(--muted-2); font-variant-numeric: tabular-nums; }
+.name-preview-src { color: var(--muted); }
+.name-preview-arrow { color: var(--muted-2); text-align: center; }
+.name-preview-dst strong { color: var(--text); font-weight: 600; }
+.name-preview-dst.custom strong { color: var(--cyan-bright); }
+.name-preview-dup { color: var(--red); font-size: 10px; margin-left: 6px; text-transform: uppercase; }
 .progress-track { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .progress-track > i { display: block; height: 100%; border-radius: 4px; background: var(--cyan); }
 .progress-cell { display: flex; align-items: center; gap: 8px; }
