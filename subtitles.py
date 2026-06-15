@@ -153,6 +153,8 @@ def process_file(model, vid: Path, args):
     print(f"▶  {vid.name}")
     audio = extract_audio(vid)
     try:
+        output_dir = Path(args.output_dir) if args.output_dir else vid.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
         res = model.transcribe(str(audio), verbose=False)
         # Usa o idioma detectado pelo Whisper para nomear a legenda source.
         # (antes era hardcoded "en", causando arquivos .en.srt com PT/ES/etc.)
@@ -160,8 +162,8 @@ def process_file(model, vid: Path, args):
         # ISO codes do whisper são 2 chars (en, pt, es...). Mapeamos pt -> pt para Plex,
         # mas mantemos o detectado quando disponível.
         source_code = detected_lang
-        source_srt = vid.with_suffix(f".{source_code}.srt")
-        target_srt = vid.with_suffix(f".{args.lang}.srt")
+        source_srt = output_dir / f"{vid.stem}.{source_code}.srt"
+        target_srt = output_dir / f"{vid.stem}.{args.lang}.srt"
 
         if not args.overwrite and source_srt.exists() and target_srt.exists():
             print(f"   • legendas já existem ({source_code}+{args.lang}), pulando")
@@ -207,6 +209,8 @@ def main():
                     help="Delay entre chamadas OpenAI (segundos)")
     ap.add_argument("--threads", type=int, default=0,
                     help="Threads do torch (0=padrão do sistema, recomendado para CPU multi-core).")
+    ap.add_argument("--output-dir", default=None,
+                    help="Diretório onde os arquivos .srt serão gravados (padrão: ao lado da mídia).")
     args = ap.parse_args()
 
     import torch

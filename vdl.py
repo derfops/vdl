@@ -651,6 +651,24 @@ def transcribe_and_generate_context_via_api(audio_path, base_output_path, output
 
 def main():
     """Função principal do script."""
+    if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in {"studio", "--studio"}):
+        if not sys.stdin.isatty():
+            print("VDL Studio precisa de um terminal interativo. Use 'vdl --help' para o modo por argumentos.")
+            sys.exit(2)
+        setup_logging()
+        from vdl_studio.cli import StudioCallbacks, run_studio
+
+        callbacks = StudioCallbacks(
+            cookie_extractor=_extract_cookies_universal,
+            download_video=download_video,
+            extract_audio=extract_audio,
+            transcribe_audio_local=transcribe_audio_local,
+            transcribe_and_generate_context_via_api=transcribe_and_generate_context_via_api,
+            generate_context_from_text=generate_context_from_text,
+            script_dir=os.path.dirname(os.path.abspath(__file__)),
+        )
+        sys.exit(run_studio(callbacks))
+
     parser = argparse.ArgumentParser(
         prog="vdl",
         description="Baixa ou processa localmente vídeos, transcrevendo e analisando-os.",
@@ -658,6 +676,12 @@ def main():
         epilog="""
 -------------------------------------------------------------------
 MODOS DE OPERAÇÃO:
+
+0. VDL STUDIO (interativo):
+   Abre um menu guiado para download em lote, legendas, contexto e e-book.
+   Uso:
+     vdl
+     vdl --studio
 
 1. MODO DOWNLOAD (padrão):
    Baixa um vídeo a partir de uma URL.
@@ -676,7 +700,7 @@ PRÉ-REQUISITOS DE AUTENTICAÇÃO:
 - Para MODO DOWNLOAD:
   É necessário fornecer credenciais de uma das seguintes formas:
   1. Variável de Ambiente (Recomendado):
-     export VDL_TOKEN=$(cat cookies.json | base64 -w0)
+     export VDL_TOKEN="$(base64 < cookies.json | tr -d '\\n')"
      (cookies exportados do navegador em JSON)
   2. Arquivo de cookies (cookies.json, cookie.txt, ou token.txt)
      no mesmo diretório do script ou no CWD.
@@ -695,6 +719,7 @@ PRÉ-REQUISITOS DE AUTENTICAÇÃO:
     parser.add_argument("output_filename", nargs='?', default=None, help="Nome do arquivo de vídeo de saída (obrigatório no modo download).")
 
     # Flags de modo e configuração
+    parser.add_argument("--studio", action="store_true", help="Abre o VDL Studio interativo. Deve ser usado sozinho.")
     parser.add_argument("-o", "--only-download", action="store_true", help="Apenas baixa o vídeo, sem processamento adicional.")
     parser.add_argument("-l", "--local", action="store_true", help="Ativa o modo de processamento local (ignora o download).")
     parser.add_argument("-d", "--directory", default="output_dir", help="Diretório de saída principal.")
@@ -709,6 +734,9 @@ PRÉ-REQUISITOS DE AUTENTICAÇÃO:
     args = parser.parse_args()
 
     # --- Validação de Argumentos ---
+    if args.studio:
+        parser.error("Use 'vdl --studio' sem outros argumentos para abrir o VDL Studio.")
+
     # Diretório vazio quebraria os.makedirs(""); usar "." se o usuário passar -d ""
     if not args.directory or not args.directory.strip():
         args.directory = "."
