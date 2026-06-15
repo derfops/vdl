@@ -15,7 +15,14 @@ const pageMeta = {
   batch: {
     eyebrow: "Criação",
     title: "Novo lote",
-    subtitle: "Downloads por URL e transcrição de arquivos locais.",
+    subtitle: "Downloads por URL com cookie e opções de processamento.",
+    primary: "Validar",
+    secondary: "Limpar",
+  },
+  transcribe: {
+    eyebrow: "Transcrições",
+    title: "Transcrições",
+    subtitle: "Transcreva arquivos do servidor com Whisper local ou OpenAI.",
     primary: "Validar",
     secondary: "Limpar",
   },
@@ -75,6 +82,7 @@ const state = {
   executionMode: "sequential",
   transcriptionMode: "none",
   localProcessingMode: "transcribe",
+  transcribeEngine: "local",
   runtimeStatus: null,
   batches: [],
   selectedJobId: null,
@@ -314,7 +322,7 @@ function setPanel(panel) {
     $(`#${name}Panel`)?.classList.toggle("active-panel", name === panel);
   });
   updateTopbar();
-  if (panel === "jobs" || panel === "queue" || panel === "library") {
+  if (panel === "jobs" || panel === "queue" || panel === "library" || panel === "transcribe") {
     refreshJobs();
   }
   if (panel === "library") {
@@ -801,7 +809,9 @@ function localValidation() {
   const warnings = [];
   if (!isDataPath(sourcePath)) issues.push("Pasta de entrada deve ficar dentro de /data.");
   if (!isDataPath(destination)) issues.push("Destino deve ficar dentro de /data.");
-  if (state.localProcessingMode === "context") {
+  if (state.transcribeEngine === "openai") {
+    warnings.push("OpenAI (modo unificado) requer OPENAI_API_KEY configurada no worker.");
+  } else if (state.localProcessingMode === "context") {
     warnings.push("Contexto requer OPENAI_API_KEY configurada no worker.");
   }
   return { valid: issues.length === 0, issues, warnings };
@@ -935,15 +945,36 @@ function buildLocalPayload() {
   const sourcePath = $("#localSourceInput").value.trim() || "/data/downloads";
   const destination = $("#localDestinationInput").value.trim() || sourcePath;
   const concurrency = Math.max(1, Math.min(2, Number($("#localConcurrencyInput").value) || 1));
+  const openai = state.transcribeEngine === "openai";
   return {
     mode: state.selectedMode,
     source_path: sourcePath,
     destination,
     concurrency,
-    processing_mode: state.localProcessingMode,
-    use_gpu: $("#localUseGpu").checked,
-    whisper_model: $("#localWhisperModel").value,
+    processing_mode: openai ? "unified" : state.localProcessingMode,
+    use_gpu: openai ? false : $("#localUseGpu").checked,
+    whisper_model: openai ? "base" : $("#localWhisperModel").value,
   };
+}
+
+function setTranscribeEngine(engine) {
+  state.transcribeEngine = engine === "openai" ? "openai" : "local";
+  const openai = state.transcribeEngine === "openai";
+  $$("[data-transcribe-engine]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.transcribeEngine === state.transcribeEngine);
+  });
+  // Whisper local/GPU/modo só fazem sentido no engine local
+  ["localModeField", "localWhisperField", "localGpuField"].forEach((id) => $(`#${id}`)?.classList.toggle("hidden", openai));
+  const hint = $("#transcribeOpenaiHint");
+  if (hint) hint.hidden = !openai;
+  setText(
+    "#transcribeEngineHint",
+    openai
+      ? "Transcreve via OpenAI (modo unificado): transcrição + contexto. Requer OPENAI_API_KEY no worker."
+      : "Transcreve no servidor com Whisper (offline). Permite só transcrever ou transcrever + contexto.",
+  );
+  setText("#localModeSummary", openai ? "OpenAI · transcrever + contexto" : state.localProcessingMode === "context" ? "Transcrever + contexto" : "Apenas transcrever");
+  updateLocalValidation();
 }
 
 async function createLocalTranscriptionBatch(event) {
@@ -960,7 +991,7 @@ async function createLocalTranscriptionBatch(event) {
     setMessage("#localFormMessage", `Lote ${batch.batch_id} · ${batch.jobs.length} job(s) locais.`, "ready");
     toast(`Lote <strong>${escapeHtml(batch.batch_id)}</strong> criado · ${batch.jobs.length} job(s) locais · 📁 ${escapeHtml(batch.destination || "")}`, "ok");
     state.selectedJobId = batch.jobs[0]?.job_id || null;
-    setPanel("jobs");
+    setPanel("transcribe");
     await refreshJobs();
   } catch (error) {
     setMessage("#localFormMessage", error.message, "error");
@@ -1179,6 +1210,9 @@ async function libraryNewFolder() {
 function renderJobs() {
   renderMetrics();
   renderJobsHistory("#jobsTable", state.batches);
+  if ($("#transcribeJobsTable")) {
+    renderJobsHistory("#transcribeJobsTable", state.batches.filter((batch) => (batch.job_type || "download") === "local"));
+  }
   renderQueue(
     "#queueTable",
     allJobs().filter((job) => ["queued", "running", "blocked"].includes(job.status)),
@@ -1577,26 +1611,27 @@ async function submitNewFolder(event) {
 }
 
 function clearActiveOperation() {
-  if (state.operationMode === "download") {
-    $("#urlsInput").value = "";
-    if ($("#filenamesInput")) $("#filenamesInput").value = "";
-    $("#cookieInput").value = "";
-    state.credentialValidated = false;
-    state.credentialValue = "";
-    $("#destinationInput").value = $("#currentDestinationLabel")?.textContent || "/data/downloads";
-    setExecution("sequential");
-    setTranscription("none");
-    renderNamePreview();
-    updateDownloadValidation(true);
-  } else {
-    $("#localSourceInput").value = $("#currentDestinationLabel")?.textContent || "/data/downloads";
-    $("#localDestinationInput").value = $("#localSourceInput").value;
-    $("#localWhisperModel").value = "base";
-    $("#localConcurrencyInput").value = "1";
-    $("#localUseGpu").checked = false;
-    setLocalProcessing("transcribe");
-    updateLocalValidation(true);
-  }
+  $("#urlsInput").value = "";
+  if ($("#filenamesInput")) $("#filenamesInput").value = "";
+  $("#cookieInput").value = "";
+  state.credentialValidated = false;
+  state.credentialValue = "";
+  $("#destinationInput").value = $("#currentDestinationLabel")?.textContent || "/data/downloads";
+  setExecution("sequential");
+  setTranscription("none");
+  renderNamePreview();
+  updateDownloadValidation(true);
+}
+
+function clearLocalOperation() {
+  $("#localSourceInput").value = $("#currentDestinationLabel")?.textContent || "/data/downloads";
+  $("#localDestinationInput").value = $("#localSourceInput").value;
+  $("#localWhisperModel").value = "base";
+  $("#localConcurrencyInput").value = "1";
+  $("#localUseGpu").checked = false;
+  setLocalProcessing("transcribe");
+  setTranscribeEngine("local");
+  updateLocalValidation(true);
 }
 
 function validateCredential() {
@@ -1619,12 +1654,14 @@ function handleTopAction(kind) {
   if (kind === "primary") {
     if (panel === "library" || panel === "credentials") return setPanel("batch");
     if (panel === "batch") return validateActiveOperation();
+    if (panel === "transcribe") return updateLocalValidation(true);
     if (panel === "queue" || panel === "settings") return startRuntime(false);
     if (panel === "jobs") return refreshJobs();
   }
   if (kind === "secondary") {
     if (panel === "library") return refreshJobs();
     if (panel === "batch") return clearActiveOperation();
+    if (panel === "transcribe") return clearLocalOperation();
     if (panel === "queue") return testRuntimeIp();
     if (panel === "jobs") return loadLogs();
     if (panel === "credentials") return setPanel("settings");
@@ -1672,6 +1709,10 @@ function bindEvents() {
   $$("[data-local-processing]").forEach((button) => {
     button.addEventListener("click", () => setLocalProcessing(button.dataset.localProcessing));
   });
+  $$("[data-transcribe-engine]").forEach((button) => {
+    button.addEventListener("click", () => setTranscribeEngine(button.dataset.transcribeEngine));
+  });
+  $("#refreshTranscribeJobs")?.addEventListener("click", refreshJobs);
 
   $("#primaryTopAction").addEventListener("click", () => handleTopAction("primary"));
   $("#secondaryTopAction").addEventListener("click", () => handleTopAction("secondary"));
@@ -1948,10 +1989,11 @@ async function startApp() {
   setExecution(state.executionMode);
   setTranscription(state.transcriptionMode);
   setLocalProcessing(state.localProcessingMode);
+  setTranscribeEngine(state.transcribeEngine);
   syncDestination($("#destinationInput").value);
   syncLocalSource($("#localSourceInput").value);
   syncLocalDestination($("#localDestinationInput").value);
-  setOperation(state.operationMode);
+  setOperation("download"); // painel de lote agora é só-download; transcrição tem seção própria
   updateDownloadValidation();
   updateLocalValidation();
   const loading = '<div class="loading-row"><span class="spinner"></span> Carregando…</div>';
