@@ -351,6 +351,7 @@ class JobManager:
         cookie: str | None,
         concurrency: int,
         processing_mode: ProcessingMode,
+        filenames: list[str] | None = None,
     ) -> dict[str, Any]:
         clean_urls = [url.strip() for url in urls if url.strip()]
         if not clean_urls:
@@ -360,6 +361,9 @@ class JobManager:
             raise ValueError(f"URLs invalidas: {', '.join(invalid[:3])}")
         if not (cookie or "").strip():
             raise ValueError("Cookie obrigatorio para downloads via VDL Studio.")
+
+        # Nomes finais: 1 por URL (posicional). Vazio -> numero sequencial 01-NN.
+        output_names = build_download_filenames(clean_urls, filenames)
 
         self._ensure_runtime_ready(mode)
 
@@ -374,7 +378,7 @@ class JobManager:
                 mode=mode,
                 position=index,
                 url=url,
-                filename=f"{index:0{width}d}.mp4",
+                filename=output_names[index - 1],
                 destination=destination,
                 processing_mode=processing_mode,
             )
@@ -731,6 +735,45 @@ class JobManager:
         snapshot["reopened"] = reopened
         return snapshot
 
+    def rename_job(self, batch_id: str, job_id: str, new_name: str) -> dict[str, Any]:
+        """Renomeia o arquivo de saida de um job concluido no disco e no registro."""
+        new_filename = sanitize_output_filename(new_name)
+        with self._lock:
+            batch = self._batches.get(batch_id)
+            if batch is None:
+                raise KeyError(batch_id)
+            job = next((item for item in batch.jobs if item.job_id == job_id), None)
+            if job is None:
+                raise KeyError(job_id)
+            if job.job_type != "download":
+                raise ValueError("Renomeacao disponivel apenas para jobs de download.")
+            if job.status != "succeeded":
+                raise ValueError("So e possivel renomear o arquivo de um job concluido.")
+            old_filename = job.filename
+            destination = job.destination
+            if any(item is not job and item.filename == new_filename for item in batch.jobs):
+                raise ValueError(f"Ja existe um job neste lote com o nome {new_filename}.")
+
+        if new_filename == old_filename:
+            return {"batch_id": batch_id, "job_id": job_id, "filename": new_filename, "old_filename": old_filename}
+
+        dest_dir = resolve_data_path(self.data_root, destination)
+        old_path = dest_dir / old_filename
+        new_path = dest_dir / new_filename
+        if not old_path.exists():
+            raise ValueError(f"Arquivo nao encontrado: {destination}/{old_filename}")
+        if new_path.exists():
+            raise ValueError(f"Ja existe um arquivo chamado {new_filename} no destino.")
+        old_path.rename(new_path)
+
+        with self._lock:
+            job = self._find_job_locked(batch_id, job_id)
+            if job is not None:
+                job.filename = new_filename
+                job.updated_at = now_iso()
+                self._save_locked()
+        return {"batch_id": batch_id, "job_id": job_id, "filename": new_filename, "old_filename": old_filename}
+
     def _load(self) -> None:
         if not self.state_file.exists():
             return
@@ -755,6 +798,41 @@ class JobManager:
         tmp = self.state_file.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(self.state_file)
+
+
+VIDEO_NAME_EXTENSIONS = {".mp4", ".mkv", ".mov", ".webm", ".m4v"}
+
+
+def sanitize_output_filename(name: str) -> str:
+    """Normaliza um nome de arquivo de saida fornecido pelo usuario.
+
+    Remove componentes de caminho e caracteres invalidos e garante extensao de video.
+    """
+    clean = (name or "").strip().replace("\\", "/")
+    clean = clean.split("/")[-1]  # nunca permite subpastas/escapar do destino
+    clean = re.sub(r"[\x00-\x1f]", "", clean)
+    clean = re.sub(r'[<>:"|?*]', "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip().strip(".").strip()
+    if not clean:
+        raise ValueError("Nome de arquivo invalido.")
+    _, ext = os.path.splitext(clean)
+    if ext.lower() not in VIDEO_NAME_EXTENSIONS:
+        clean = f"{clean}.mp4"
+    return clean
+
+
+def build_download_filenames(clean_urls: list[str], filenames: list[str] | None) -> list[str]:
+    """Resolve o nome de cada job: nome custom (posicional) ou 01-NN automatico."""
+    width = max(2, len(str(len(clean_urls))))
+    raw = list(filenames or [])
+    result: list[str] = []
+    for index, _url in enumerate(clean_urls, start=1):
+        custom = raw[index - 1].strip() if index - 1 < len(raw) else ""
+        result.append(sanitize_output_filename(custom) if custom else f"{index:0{width}d}.mp4")
+    duplicates = sorted({name for name in result if result.count(name) > 1})
+    if duplicates:
+        raise ValueError(f"Nomes de arquivo duplicados no lote: {', '.join(duplicates[:5])}")
+    return result
 
 
 def normalize_data_destination(destination: str) -> str:

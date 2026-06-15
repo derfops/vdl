@@ -10,12 +10,14 @@ from studio.api.orchestrator import (
     FileExplorer,
     JobManager,
     JobRecord,
+    build_download_filenames,
     list_local_media_files,
     local_processing_args,
     normalize_cookie_to_vdl_token,
     normalize_data_destination,
     now_iso,
     processing_args,
+    sanitize_output_filename,
 )
 
 
@@ -305,6 +307,90 @@ class BatchLifecycleTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "nao esta"):
                 manager.retry_batch("batch-r3", cookie="session=abc")
+
+
+class FilenameTests(unittest.TestCase):
+    def test_sanitize_strips_paths_and_adds_extension(self):
+        self.assertEqual(sanitize_output_filename("AULA_01"), "AULA_01.mp4")
+        self.assertEqual(sanitize_output_filename("01 - Teaser"), "01 - Teaser.mp4")
+        self.assertEqual(sanitize_output_filename("../../etc/passwd"), "passwd.mp4")
+        self.assertEqual(sanitize_output_filename("aula/final.mkv"), "final.mkv")
+        self.assertEqual(sanitize_output_filename('na:me?*.mp4'), "name.mp4")
+
+    def test_sanitize_rejects_empty(self):
+        with self.assertRaises(ValueError):
+            sanitize_output_filename("   ")
+
+    def test_build_filenames_custom_with_numeric_fallback(self):
+        urls = ["https://x/a", "https://x/b", "https://x/c"]
+        names = build_download_filenames(urls, ["Teaser", "", "Aula 02.mp4"])
+        self.assertEqual(names, ["Teaser.mp4", "02.mp4", "Aula 02.mp4"])
+
+    def test_build_filenames_all_auto_when_empty(self):
+        urls = ["https://x/a", "https://x/b"]
+        self.assertEqual(build_download_filenames(urls, None), ["01.mp4", "02.mp4"])
+        self.assertEqual(build_download_filenames(urls, ["", ""]), ["01.mp4", "02.mp4"])
+
+    def test_build_filenames_rejects_duplicates(self):
+        urls = ["https://x/a", "https://x/b"]
+        with self.assertRaisesRegex(ValueError, "duplicados"):
+            build_download_filenames(urls, ["aula", "aula"])
+
+    def test_create_download_batch_applies_custom_filenames(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orchestrator = FakeOrchestrator(ready=True)
+            manager = JobManager(Path(tmpdir), orchestrator=orchestrator)
+            batch = manager.create_download_batch(
+                mode="none",
+                urls=["https://x/teaser.mpd", "https://x/aula1.mpd"],
+                destination="/data/curso",
+                cookie="session=abc",
+                concurrency=1,
+                processing_mode="download",
+                filenames=["00 - Teaser", ""],
+            )
+            self.assertEqual([job["filename"] for job in batch["jobs"]], ["00 - Teaser.mp4", "02.mp4"])
+            _wait_until(lambda: all(
+                job["status"] in {"succeeded", "failed", "blocked", "canceled"}
+                for b in manager.list_batches()["batches"]
+                for job in b["jobs"]
+            ))
+
+
+class RenameJobTests(unittest.TestCase):
+    def _manager_with_succeeded_file(self, tmpdir):
+        data_root = Path(tmpdir)
+        (data_root / "curso").mkdir()
+        (data_root / "curso" / "01.mp4").write_text("video", encoding="utf-8")
+        manager = JobManager(data_root, orchestrator=FakeOrchestrator())
+        batch = _make_blocked_batch(manager, "batch-rn", ["succeeded"])
+        batch.jobs[0].filename = "01.mp4"
+        batch.jobs[0].destination = "/data/curso"
+        return manager, data_root
+
+    def test_rename_moves_file_and_updates_record(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager, data_root = self._manager_with_succeeded_file(tmpdir)
+            result = manager.rename_job("batch-rn", "job-01", "Aula 01")
+            self.assertEqual(result["filename"], "Aula 01.mp4")
+            self.assertFalse((data_root / "curso" / "01.mp4").exists())
+            self.assertTrue((data_root / "curso" / "Aula 01.mp4").exists())
+            job = manager.list_batches()["batches"][0]["jobs"][0]
+            self.assertEqual(job["filename"], "Aula 01.mp4")
+
+    def test_rename_rejects_non_succeeded_job(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = JobManager(Path(tmpdir), orchestrator=FakeOrchestrator())
+            _make_blocked_batch(manager, "batch-b", ["blocked"])
+            with self.assertRaisesRegex(ValueError, "concluido"):
+                manager.rename_job("batch-b", "job-01", "novo")
+
+    def test_rename_rejects_existing_target(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager, data_root = self._manager_with_succeeded_file(tmpdir)
+            (data_root / "curso" / "Aula 01.mp4").write_text("outro", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Ja existe um arquivo"):
+                manager.rename_job("batch-rn", "job-01", "Aula 01")
 
 
 if __name__ == "__main__":

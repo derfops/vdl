@@ -750,6 +750,7 @@ function downloadValidation() {
 
 function updateDownloadValidation(showDetails = false) {
   updateUrlCounter();
+  renderNamePreview();
   const currentCredentialValue = ($("#cookieInput")?.value || "").trim();
   if (currentCredentialValue !== state.credentialValue) {
     state.credentialValidated = false;
@@ -845,7 +846,68 @@ function buildPayload() {
     cookie: $("#cookieInput").value.trim() || null,
     concurrency,
     processing_mode: selectedProcessingMode(),
+    filenames: filenameLines(urls.length),
   };
+}
+
+// Nomes alinhados POSICIONALMENTE às URLs (linha vazia = automático no backend).
+function filenameLines(count) {
+  const raw = ($("#filenamesInput")?.value ?? "").split(/\r?\n/).map((line) => line.trim());
+  return Array.from({ length: count }, (_, i) => raw[i] || "");
+}
+
+function urlBasename(url) {
+  try {
+    const path = new URL(url).pathname;
+    const last = path.split("/").filter(Boolean).pop() || url;
+    return last;
+  } catch {
+    return (url.split("/").filter(Boolean).pop() || url).split("?")[0];
+  }
+}
+
+// Espelha sanitize_output_filename do backend (só para o preview).
+function previewFilename(custom, index, width) {
+  const clean = String(custom || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .pop()
+    .replace(/[<>:"|?*\x00-\x1f]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/^\.+|\.+$/g, "")
+    .trim();
+  if (!clean) return `${String(index).padStart(width, "0")}.mp4`;
+  return /\.(mp4|mkv|mov|webm|m4v)$/i.test(clean) ? clean : `${clean}.mp4`;
+}
+
+function renderNamePreview() {
+  const box = $("#namePreview");
+  if (!box) return;
+  const urls = parseUrls($("#urlsInput")?.value || "");
+  const names = ($("#filenamesInput")?.value ?? "").split(/\r?\n/).map((line) => line.trim());
+  if (!urls.length) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  const width = Math.max(2, String(urls.length).length);
+  const finals = urls.map((_url, i) => previewFilename(names[i], i + 1, width));
+  const seen = {};
+  finals.forEach((name) => (seen[name] = (seen[name] || 0) + 1));
+  const rows = urls
+    .map((url, i) => {
+      const dup = seen[finals[i]] > 1 ? ' <span class="name-preview-dup">duplicado</span>' : "";
+      const custom = (names[i] || "").length > 0;
+      return `<div class="name-preview-row">
+        <span class="name-preview-idx">${String(i + 1).padStart(width, "0")}</span>
+        <span class="name-preview-src truncate" title="${escapeHtml(url)}">${escapeHtml(urlBasename(url))}</span>
+        <span class="name-preview-arrow">→</span>
+        <span class="name-preview-dst ${custom ? "custom" : ""}"><strong>${escapeHtml(finals[i])}</strong>${dup}</span>
+      </div>`;
+    })
+    .join("");
+  box.innerHTML = `<div class="name-preview-head">Prévia · URL → nome do arquivo</div>${rows}`;
+  box.hidden = false;
 }
 
 async function createBatch(event) {
@@ -1150,6 +1212,11 @@ function checkBatchCompletion() {
   state.batchReportInit = true;
 }
 
+function renameButton(job) {
+  if (job.job_type === "local" || job.status !== "succeeded") return "";
+  return `<button class="table-action" data-rename-batch="${escapeHtml(job.batch_id)}" data-rename-job="${escapeHtml(job.job_id)}" data-rename-current="${escapeHtml(job.filename || "")}" type="button">Renomear</button>`;
+}
+
 function jobRowHtml(job) {
   return `
     <div class="job-row" title="${escapeHtml(job.error || job.url)}">
@@ -1159,7 +1226,7 @@ function jobRowHtml(job) {
       <span class="job-meta">${escapeHtml(modes[job.mode])}</span>
       <span class="job-meta">${escapeHtml(processingLabel(job.processing_mode))}</span>
       <span class="job-meta">${escapeHtml(formatTime(job.updated_at))}</span>
-      <span class="job-actions">${previewButton(job)}</span>
+      <span class="job-actions">${renameButton(job)}${previewButton(job)}</span>
     </div>
   `;
 }
@@ -1177,6 +1244,9 @@ function batchActionsHtml(batch) {
   const hasPending = jobs.some((job) => job.status === "queued" || job.status === "running");
   const hasRetryable = jobs.some((job) => ["blocked", "failed", "canceled"].includes(job.status));
   const buttons = [];
+  if ((batch.job_type || "download") === "download") {
+    buttons.push(`<button class="batch-action" data-batch-action="import" data-batch-id="${id}" type="button" title="Carregar URLs, nomes e opções no formulário">Importar</button>`);
+  }
   if (hasPending) {
     buttons.push(`<button class="batch-action" data-batch-action="cancel" data-batch-id="${id}" type="button">Cancelar</button>`);
   }
@@ -1219,8 +1289,53 @@ function renderJobsHistory(selector, batches) {
       if (button.dataset.batchAction === "cancel") cancelBatch(batchId);
       else if (button.dataset.batchAction === "retry") retryBatch(batchId, batch);
       else if (button.dataset.batchAction === "delete") deleteBatch(batchId);
+      else if (button.dataset.batchAction === "import") importBatch(batch);
     });
   });
+}
+
+function importBatch(batch) {
+  if (!batch) return;
+  const jobs = batch.jobs || [];
+  setPanel("batch");
+  setOperation("download");
+  if (batch.mode) setMode(batch.mode);
+  $("#urlsInput").value = jobs.map((job) => job.url).join("\n");
+  if ($("#filenamesInput")) $("#filenamesInput").value = jobs.map((job) => job.filename || "").join("\n");
+  $("#destinationInput").value = batch.destination || "/data/downloads";
+
+  const pm = batch.processing_mode || "download";
+  setTranscription(pm === "unified" ? "openai" : pm === "download" ? "none" : "local");
+  if (pm === "context") setCheckbox("generateContext", true, false);
+
+  const conc = Math.max(1, Math.min(4, Number(batch.concurrency) || 1));
+  setExecution(conc > 1 ? "parallel" : "sequential");
+  if ($("#concurrencyInput")) $("#concurrencyInput").value = String(conc);
+
+  $("#cookieInput").value = "";
+  state.credentialValidated = false;
+  state.credentialValue = "";
+  renderNamePreview();
+  updateDownloadValidation(true);
+  toast(`Dados do lote <strong>${escapeHtml(batch.batch_id)}</strong> importados · cole o cookie e crie o novo lote.`, "ok");
+}
+
+async function renameJob(batchId, jobId, current) {
+  const name = window.prompt("Novo nome do arquivo (mantém a extensão se você não informar):", current || "");
+  if (name === null) return;
+  const clean = name.trim();
+  if (!clean || clean === current) return;
+  try {
+    const result = await api(`/jobs/batch/${encodeURIComponent(batchId)}/job/${encodeURIComponent(jobId)}/rename`, {
+      method: "POST",
+      body: JSON.stringify({ new_name: clean }),
+    });
+    toast(`Renomeado para <strong>${escapeHtml(result.filename)}</strong>.`, "ok");
+    await refreshJobs();
+    if (state.selectedPanel === "library") await loadLibrary(state.libraryPath, true);
+  } catch (error) {
+    toast(`Falha ao renomear: ${escapeHtml(error.message)}`, "error");
+  }
 }
 
 async function cancelBatch(batchId) {
@@ -1464,12 +1579,14 @@ async function submitNewFolder(event) {
 function clearActiveOperation() {
   if (state.operationMode === "download") {
     $("#urlsInput").value = "";
+    if ($("#filenamesInput")) $("#filenamesInput").value = "";
     $("#cookieInput").value = "";
     state.credentialValidated = false;
     state.credentialValue = "";
     $("#destinationInput").value = $("#currentDestinationLabel")?.textContent || "/data/downloads";
     setExecution("sequential");
     setTranscription("none");
+    renderNamePreview();
     updateDownloadValidation(true);
   } else {
     $("#localSourceInput").value = $("#currentDestinationLabel")?.textContent || "/data/downloads";
@@ -1525,6 +1642,13 @@ function bindEvents() {
     event.stopPropagation();
     openPreview(button.dataset.previewPath, button.dataset.previewTitle);
   });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-rename-job]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    renameJob(button.dataset.renameBatch, button.dataset.renameJob, button.dataset.renameCurrent);
+  });
   $$(".nav-item").forEach((button) => button.addEventListener("click", () => setPanel(button.dataset.panel)));
   $$("[data-panel-jump]").forEach((button) => {
     button.addEventListener("click", () => setPanel(button.dataset.panelJump));
@@ -1564,6 +1688,7 @@ function bindEvents() {
   $("#downloadForm").addEventListener("submit", createBatch);
   $("#localTranscriptionForm").addEventListener("submit", createLocalTranscriptionBatch);
   $("#urlsInput").addEventListener("input", () => updateDownloadValidation());
+  $("#filenamesInput")?.addEventListener("input", renderNamePreview);
   $("#destinationInput").addEventListener("input", () => updateDownloadValidation());
   $("#cookieInput").addEventListener("input", () => updateDownloadValidation());
   ["extractAudio", "generateContext", "generateSubtitles", "useGpu"].forEach((id) => {

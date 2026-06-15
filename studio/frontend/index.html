@@ -254,19 +254,20 @@
                   <textarea id="urlsInput" rows="7" placeholder="https://..."></textarea>
                 </label>
 
-                <div class="two-column">
-                  <label class="field">
-                    <span>Destino</span>
-                    <div class="inline-input">
-                      <input id="destinationInput" value="/data/downloads" />
-                      <button type="button" id="browseButtonBatch" class="secondary-button">Escolher</button>
-                    </div>
-                  </label>
-                  <label class="field">
-                    <span>Nome dos arquivos</span>
-                    <input id="filenamePatternInput" value="01-NN automático" disabled />
-                  </label>
-                </div>
+                <label class="field">
+                  <span>Nomes dos arquivos <small class="field-hint-inline">1 por linha, alinhado às URLs · linha vazia = 01-NN automático</small></span>
+                  <textarea id="filenamesInput" rows="4" placeholder="Ex.: 01 - Teaser&#10;02 - Aula 01&#10;(deixe vazio para numerar automaticamente)"></textarea>
+                </label>
+
+                <div id="namePreview" class="name-preview" hidden></div>
+
+                <label class="field">
+                  <span>Destino</span>
+                  <div class="inline-input">
+                    <input id="destinationInput" value="/data/downloads" />
+                    <button type="button" id="browseButtonBatch" class="secondary-button">Escolher</button>
+                  </div>
+                </label>
 
                 <div class="two-column align-end">
                   <div class="field">

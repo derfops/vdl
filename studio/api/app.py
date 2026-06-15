@@ -113,6 +113,7 @@ class BatchDownloadRequest(BaseModel):
     cookie: str | None = None
     concurrency: int = Field(default=1, ge=1, le=4)
     processing_mode: Literal["download", "transcribe", "context", "unified"] = "download"
+    filenames: list[str] = Field(default_factory=list)
 
 
 class LocalTranscriptionRequest(BaseModel):
@@ -206,6 +207,7 @@ def create_download_batch(request: BatchDownloadRequest) -> dict[str, object]:
             cookie=request.cookie,
             concurrency=request.concurrency,
             processing_mode=request.processing_mode,
+            filenames=request.filenames,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -229,6 +231,20 @@ def create_local_transcription_batch(request: LocalTranscriptionRequest) -> dict
 
 class RetryBatchRequest(BaseModel):
     cookie: str | None = None
+
+
+class RenameJobRequest(BaseModel):
+    new_name: str
+
+
+@app.post("/api/jobs/batch/{batch_id}/job/{job_id}/rename", dependencies=[Depends(require_auth)])
+def rename_job(batch_id: str, job_id: str, request: RenameJobRequest) -> dict[str, object]:
+    try:
+        return jobs.rename_job(batch_id, job_id, request.new_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Job nao encontrado.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/jobs/batch/{batch_id}/cancel", dependencies=[Depends(require_auth)])
