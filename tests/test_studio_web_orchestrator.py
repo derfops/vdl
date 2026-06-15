@@ -1,4 +1,6 @@
 import base64
+import datetime
+import json
 import tempfile
 import time
 import unittest
@@ -450,6 +452,55 @@ class LocalTranscriptionEngineTests(unittest.TestCase):
             self.assertIn("--whisper-model", call)
             self.assertIn("small", call)
             self.assertIn("--gpu", call)
+
+
+class BootReconciliationTests(unittest.TestCase):
+    def _write_state(self, data_root: Path, statuses) -> None:
+        state_dir = data_root / ".vdl-studio-web"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        jobs = [
+            {
+                "job_id": f"job-{i:02d}", "batch_id": "batch-x", "mode": "none", "position": i,
+                "url": f"https://x/{i}", "filename": f"{i:02d}.mp4", "destination": "/data/downloads",
+                "processing_mode": "download", "status": st, "stage": st,
+            }
+            for i, st in enumerate(statuses, start=1)
+        ]
+        payload = {"batches": [{
+            "batch_id": "batch-x", "mode": "none", "destination": "/data/downloads",
+            "processing_mode": "download", "concurrency": 1, "created_at": now_iso(),
+            "jobs": jobs, "job_type": "download",
+        }]}
+        (state_dir / "jobs.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_running_and_queued_become_interrupted_on_load(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_root = Path(tmpdir)
+            self._write_state(data_root, ["succeeded", "running", "queued", "failed"])
+            manager = JobManager(data_root, orchestrator=FakeOrchestrator())
+            statuses = [j["status"] for j in manager.list_batches()["batches"][0]["jobs"]]
+            # running/queued órfãos viram 'interrupted'; succeeded/failed intactos
+            self.assertEqual(statuses, ["succeeded", "interrupted", "interrupted", "failed"])
+
+    def test_interrupted_jobs_are_retryable(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = JobManager(Path(tmpdir), orchestrator=FakeOrchestrator(ready=True))
+            _make_blocked_batch(manager, "batch-i", ["interrupted", "succeeded"])
+            snapshot = manager.retry_batch("batch-i", cookie="session=abc")
+            self.assertEqual(snapshot["reopened"], 1)
+            _wait_until(lambda: all(
+                job["status"] in {"succeeded", "failed", "blocked", "canceled", "interrupted"}
+                for job in manager.list_batches()["batches"][0]["jobs"]
+            ))
+
+    def test_list_batches_includes_server_now(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = JobManager(Path(tmpdir), orchestrator=FakeOrchestrator())
+            self.assertIn("server_now", manager.list_batches())
+
+    def test_now_iso_is_timezone_aware(self):
+        parsed = datetime.datetime.fromisoformat(now_iso())
+        self.assertIsNotNone(parsed.tzinfo)
 
 
 if __name__ == "__main__":

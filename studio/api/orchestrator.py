@@ -99,7 +99,9 @@ SENSITIVE_FILE_NAMES = {
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    # Hora local do servidor (tz-aware), no MESMO fuso usado para gerar o batch_id.
+    # Antes era UTC, o que divergia do batch_id (local) e confundia diagnósticos.
+    return datetime.now().astimezone().isoformat()
 
 
 class SafeRunner:
@@ -471,7 +473,7 @@ class JobManager:
     def list_batches(self) -> dict[str, Any]:
         with self._lock:
             batches = sorted(self._batches.values(), key=lambda b: b.created_at, reverse=True)
-            return {"batches": [batch.to_dict() for batch in batches]}
+            return {"batches": [batch.to_dict() for batch in batches], "server_now": now_iso()}
 
     def _ensure_runtime_ready(self, mode: RuntimeMode) -> None:
         """Valida que o runtime esta pronto ANTES de criar/reprocessar um lote.
@@ -696,9 +698,9 @@ class JobManager:
                 raise KeyError(batch_id)
             mode = batch.mode
             job_type = batch.job_type
-            retryable = [job for job in batch.jobs if job.status in ("blocked", "failed", "canceled")]
+            retryable = [job for job in batch.jobs if job.status in ("blocked", "failed", "canceled", "interrupted")]
             if not retryable:
-                raise ValueError("Nenhum job para reprocessar (somente bloqueados, falhos ou cancelados).")
+                raise ValueError("Nenhum job para reprocessar (somente bloqueados, falhos, cancelados ou interrompidos).")
 
         # Valida o runtime antes de reabrir os jobs, para nao recair em 'blocked'.
         self._ensure_runtime_ready(mode)
@@ -716,7 +718,7 @@ class JobManager:
             self._cancelled_batches.discard(batch_id)
             reopened = 0
             for job in batch.jobs:
-                if job.status in ("blocked", "failed", "canceled"):
+                if job.status in ("blocked", "failed", "canceled", "interrupted"):
                     self._cancelled_jobs.discard((batch_id, job.job_id))
                     job.status = "queued"
                     job.stage = "queued"
@@ -795,6 +797,28 @@ class JobManager:
                 source_path=batch_data.get("source_path"),
             )
             self._batches[batch.batch_id] = batch
+        self._reconcile_orphans_on_load()
+
+    def _reconcile_orphans_on_load(self) -> None:
+        """Identifica jobs órfãos no boot.
+
+        Um processo recém-iniciado nao tem thread alguma orquestrando lotes; logo,
+        qualquer job carregado como 'running'/'queued' ficou orfao num restart da API
+        (os jobs NAO sobrevivem ao restart). Marca como 'interrupted' para que nunca
+        sejam confundidos com execucao real e possam ser reprocessados.
+        """
+        changed = 0
+        for batch in self._batches.values():
+            for job in batch.jobs:
+                if job.status in ("running", "queued"):
+                    job.status = "interrupted"
+                    job.stage = "interrupted"
+                    job.error = "Interrompido por reinício da API (job em andamento não sobrevive ao restart). Reprocessar."
+                    job.finished_at = job.finished_at or now_iso()
+                    job.updated_at = now_iso()
+                    changed += 1
+        if changed:
+            self._save_locked()
 
     def _save_locked(self) -> None:
         payload = {"batches": [batch.to_dict() for batch in self._batches.values()]}
