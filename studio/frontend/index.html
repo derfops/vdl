@@ -106,6 +106,9 @@
           <button class="nav-item" data-panel="batch" type="button" title="Novo lote">
             <span class="nav-icon">＋</span><span class="nav-label">Novo lote</span>
           </button>
+          <button class="nav-item" data-panel="transcribe" type="button" title="Transcrições">
+            <span class="nav-icon">✎</span><span class="nav-label">Transcrições</span>
+          </button>
           <button class="nav-item" data-panel="queue" type="button" title="Fila">
             <span class="nav-icon">≣</span><span class="nav-label">Fila</span>
           </button>
@@ -210,7 +213,7 @@
                 <p id="inspectorPath" class="muted-text">Selecione um arquivo para ver detalhes.</p>
                 <div class="artifact-list" id="artifactList"></div>
                 <div class="inspector-actions">
-                  <button class="secondary-button" type="button" data-operation-jump="local">Processar pasta</button>
+                  <button class="secondary-button" type="button" data-panel-jump="transcribe">Processar pasta</button>
                   <button class="primary-button" type="button" data-panel-jump="jobs">Abrir jobs</button>
                 </div>
               </aside>
@@ -219,17 +222,6 @@
 
           <!-- NOVO LOTE -->
           <section id="batchPanel" class="panel">
-            <div class="operation-switch">
-              <button class="operation-card active" data-operation="download" type="button">
-                <span class="chip">⬇</span>
-                <span class="op-copy"><strong>Download por URLs</strong><small>Cookie obrigatório antes de criar jobs.</small></span>
-              </button>
-              <button class="operation-card" data-operation="local" type="button">
-                <span class="chip">✎</span>
-                <span class="op-copy"><strong>Transcrição por pasta</strong><small>Usa arquivos que já estão no servidor.</small></span>
-              </button>
-            </div>
-
             <form id="downloadForm" class="batch-layout operation-panel active-operation" data-operation-panel="download">
               <section class="surface-panel batch-main">
                 <div class="section-head compact">
@@ -324,10 +316,23 @@
               </aside>
             </form>
 
-            <form id="localTranscriptionForm" class="surface-panel local-transcription-panel operation-panel" data-operation-panel="local">
+          </section>
+
+          <!-- TRANSCRIÇÕES -->
+          <section id="transcribePanel" class="panel">
+            <form id="localTranscriptionForm" class="surface-panel local-transcription-panel">
               <div class="section-head compact">
                 <div><p class="eyebrow cyan">Transcrição por pasta</p><h3>Arquivos locais</h3></div>
                 <span id="localModeSummary" class="badge cyan">Apenas transcrever</span>
+              </div>
+
+              <div class="field">
+                <span>Engine de transcrição</span>
+                <div class="segmented" role="radiogroup" aria-label="Engine de transcrição">
+                  <button class="segment active" data-transcribe-engine="local" type="button">Local (Whisper)</button>
+                  <button class="segment" data-transcribe-engine="openai" type="button">OpenAI</button>
+                </div>
+                <p id="transcribeEngineHint" class="field-hint">Transcreve no servidor com Whisper (offline).</p>
               </div>
 
               <div class="two-column">
@@ -348,14 +353,14 @@
               </div>
 
               <div class="local-options-grid">
-                <div class="field">
+                <div class="field" id="localModeField">
                   <span>Modo</span>
                   <div class="segmented" role="radiogroup" aria-label="Modo de transcrição local">
                     <button class="segment active" data-local-processing="transcribe" type="button">Apenas transcrever</button>
                     <button class="segment" data-local-processing="context" type="button">Transcrever + contexto</button>
                   </div>
                 </div>
-                <label class="field compact-field">
+                <label class="field compact-field" id="localWhisperField">
                   <span>Modelo Whisper</span>
                   <select id="localWhisperModel">
                     <option value="tiny">tiny</option>
@@ -369,14 +374,24 @@
                   <span>Paralelo</span>
                   <input id="localConcurrencyInput" type="number" min="1" max="2" value="1" />
                 </label>
-                <label class="check-row"><input id="localUseGpu" type="checkbox" /><span>Usar GPU</span></label>
+                <label class="check-row" id="localGpuField"><input id="localUseGpu" type="checkbox" /><span>Usar GPU</span></label>
               </div>
+
+              <div id="transcribeOpenaiHint" class="rule-box" hidden>OpenAI envia o áudio para a API (modo unificado): transcreve e gera contexto. Requer OPENAI_API_KEY no worker; GPU/Whisper local não se aplicam.</div>
 
               <div class="submit-row">
                 <button id="createLocalBatchButton" class="primary-button" type="submit">Iniciar transcrição</button>
                 <p id="localFormMessage" class="form-message">Pronto para criar jobs locais.</p>
               </div>
             </form>
+
+            <section class="surface-panel">
+              <div class="section-head compact">
+                <div><p class="eyebrow cyan">Controle</p><h3>Jobs de transcrição</h3></div>
+                <button id="refreshTranscribeJobs" class="secondary-button" type="button">Atualizar</button>
+              </div>
+              <div id="transcribeJobsTable" class="jobs-table"></div>
+            </section>
           </section>
 
           <!-- FILA -->

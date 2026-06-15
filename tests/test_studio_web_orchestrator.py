@@ -124,6 +124,7 @@ class StudioWebOrchestratorTests(unittest.TestCase):
     def test_local_processing_args_accept_only_transcription_modes(self):
         self.assertEqual(local_processing_args("transcribe"), ["--transcribe"])
         self.assertEqual(local_processing_args("context"), ["--context"])
+        self.assertEqual(local_processing_args("unified"), ["--unified-mode"])
         with self.assertRaises(ValueError):
             local_processing_args("download")
 
@@ -391,6 +392,64 @@ class RenameJobTests(unittest.TestCase):
             (data_root / "curso" / "Aula 01.mp4").write_text("outro", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "Ja existe um arquivo"):
                 manager.rename_job("batch-rn", "job-01", "Aula 01")
+
+
+class LocalTranscriptionEngineTests(unittest.TestCase):
+    def test_openai_engine_uses_unified_without_whisper_or_gpu(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_root = Path(tmpdir)
+            (data_root / "curso").mkdir()
+            (data_root / "curso" / "01.mp4").write_text("video", encoding="utf-8")
+            orchestrator = FakeOrchestrator(ready=True)
+            manager = JobManager(data_root, orchestrator=orchestrator)
+
+            batch = manager.create_local_transcription_batch(
+                mode="none",
+                source_path="/data/curso",
+                destination="/data/curso",
+                concurrency=1,
+                processing_mode="unified",
+                use_gpu=True,  # deve ser ignorado no modo OpenAI
+                whisper_model="large",  # deve ser ignorado no modo OpenAI
+            )
+            self.assertEqual(batch["processing_mode"], "unified")
+
+            _wait_until(lambda: all(
+                job["status"] in {"succeeded", "failed", "blocked", "canceled"}
+                for job in manager.list_batches()["batches"][0]["jobs"]
+            ))
+            call = next(c for c in orchestrator.runner.calls if "vdl" in c)
+            self.assertIn("--unified-mode", call)
+            self.assertNotIn("--whisper-model", call)
+            self.assertNotIn("--gpu", call)
+            self.assertIn("--local", call)
+
+    def test_local_whisper_engine_passes_model_and_gpu(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_root = Path(tmpdir)
+            (data_root / "curso").mkdir()
+            (data_root / "curso" / "01.mp4").write_text("video", encoding="utf-8")
+            orchestrator = FakeOrchestrator(ready=True)
+            manager = JobManager(data_root, orchestrator=orchestrator)
+
+            manager.create_local_transcription_batch(
+                mode="none",
+                source_path="/data/curso",
+                destination="/data/curso",
+                concurrency=1,
+                processing_mode="transcribe",
+                use_gpu=True,
+                whisper_model="small",
+            )
+            _wait_until(lambda: all(
+                job["status"] in {"succeeded", "failed", "blocked", "canceled"}
+                for job in manager.list_batches()["batches"][0]["jobs"]
+            ))
+            call = next(c for c in orchestrator.runner.calls if "vdl" in c)
+            self.assertIn("--transcribe", call)
+            self.assertIn("--whisper-model", call)
+            self.assertIn("small", call)
+            self.assertIn("--gpu", call)
 
 
 if __name__ == "__main__":

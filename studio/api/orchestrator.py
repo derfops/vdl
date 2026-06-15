@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 RuntimeMode = Literal["none", "cyberghost", "windscribe"]
 ProcessingMode = Literal["download", "transcribe", "context", "unified"]
-LocalProcessingMode = Literal["transcribe", "context"]
+LocalProcessingMode = Literal["transcribe", "context", "unified"]
 
 LOCAL_MEDIA_EXTENSIONS = {".mp4", ".mkv", ".mov", ".webm", ".m4v"}
 WHISPER_MODELS = {"tiny", "base", "small", "medium", "large"}
@@ -568,11 +568,14 @@ class JobManager:
             job.destination,
             *local_processing_args(job.processing_mode),
         ]
-        whisper_model = str(job.options.get("whisper_model") or "base")
-        if whisper_model != "base":
-            args.extend(["--whisper-model", whisper_model])
-        if bool(job.options.get("use_gpu")):
-            args.append("--gpu")
+        # OpenAI (unified) envia o audio para a API: whisper local/GPU nao se aplicam
+        # e o vdl.py rejeita a combinacao.
+        if job.processing_mode != "unified":
+            whisper_model = str(job.options.get("whisper_model") or "base")
+            if whisper_model != "base":
+                args.extend(["--whisper-model", whisper_model])
+            if bool(job.options.get("use_gpu")):
+                args.append("--gpu")
 
         result = self.orchestrator.runner.docker(*args, timeout=24 * 60 * 60)
         logs = "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
@@ -951,7 +954,9 @@ def local_processing_args(mode: ProcessingMode) -> list[str]:
         return ["--transcribe"]
     if mode == "context":
         return ["--context"]
-    raise ValueError("Modo local deve ser 'transcribe' ou 'context'.")
+    if mode == "unified":
+        return ["--unified-mode"]
+    raise ValueError("Modo local deve ser 'transcribe', 'context' ou 'unified'.")
 
 
 def _try_b64decode(value: str) -> str | None:
