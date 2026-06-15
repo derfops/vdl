@@ -30,7 +30,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -225,6 +225,38 @@ def create_local_transcription_batch(request: LocalTranscriptionRequest) -> dict
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class RetryBatchRequest(BaseModel):
+    cookie: str | None = None
+
+
+@app.post("/api/jobs/batch/{batch_id}/cancel", dependencies=[Depends(require_auth)])
+def cancel_batch(batch_id: str) -> dict[str, object]:
+    try:
+        return jobs.cancel_batch(batch_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Lote nao encontrado.") from exc
+
+
+@app.post("/api/jobs/batch/{batch_id}/retry", dependencies=[Depends(require_auth)])
+def retry_batch(batch_id: str, request: RetryBatchRequest | None = None) -> dict[str, object]:
+    try:
+        return jobs.retry_batch(batch_id, cookie=request.cookie if request else None)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Lote nao encontrado.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/jobs/batch/{batch_id}", dependencies=[Depends(require_auth)])
+def delete_batch(batch_id: str, force: bool = False) -> dict[str, object]:
+    try:
+        return jobs.delete_batch(batch_id, force=force)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Lote nao encontrado.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/jobs", dependencies=[Depends(require_auth)])

@@ -341,6 +341,11 @@ h3 { font-size: 17px; line-height: 1.25; font-weight: 700; }
 .batch-group-head { display: flex; align-items: center; gap: 10px; padding: 14px 8px 8px; }
 .batch-group-head .batch-id { color: var(--cyan-bright); font-weight: 700; font-size: 13px; }
 .batch-group-head .batch-meta { font-size: 12px; color: var(--muted-2); }
+.batch-actions { margin-left: auto; display: flex; gap: 6px; }
+.batch-action { padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--surface-3); border: 1px solid var(--line); color: var(--text); transition: border-color .15s, color .15s; }
+.batch-action:hover { border-color: var(--accent); color: var(--cyan-bright); }
+.batch-action.danger { background: rgba(243, 82, 82, 0.10); border-color: rgba(243, 82, 82, 0.35); color: var(--red); }
+.batch-action.danger:hover { border-color: var(--red); color: var(--red); }
 .progress-track { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .progress-track > i { display: block; height: 100%; border-radius: 4px; background: var(--cyan); }
 .progress-cell { display: flex; align-items: center; gap: 8px; }
