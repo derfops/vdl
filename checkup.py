@@ -16,7 +16,7 @@ def token():
 def write_env(t):
     Path("/data").mkdir(parents=True, exist_ok=True)
     if t:
-        open("/data/vdl_token.env", "w").write(f"VDL_TOKEN={t}\n")
+        open("/data/vdl_token.env", "w").write(f"export VDL_TOKEN={t}\n")
 
 def log_ip():
     Path("/logs").mkdir(parents=True, exist_ok=True)

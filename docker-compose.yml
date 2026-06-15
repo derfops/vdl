@@ -1,21 +1,51 @@
 services:
+  vpn-vdl:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - TZ=America/Sao_Paulo
+      - VPN_SERVICE_PROVIDER=custom
+      - VPN_TYPE=openvpn
+      - OPENVPN_CUSTOM_CONFIG=/gluetun/openvpn.ovpn
+      - OPENVPN_USER=${OPENVPN_USER:?OPENVPN_USER precisa estar definido no .env ou ambiente}
+      - OPENVPN_PASSWORD=${OPENVPN_PASSWORD:?OPENVPN_PASSWORD precisa estar definido no .env ou ambiente}
+      - FIREWALL=on
+    volumes:
+      - ./gluetun:/gluetun
+    healthcheck:
+      test: ["CMD-SHELL", "/gluetun-entrypoint healthcheck"]
+      interval: 5s
+      timeout: 5s
+      start_period: 45s
+      retries: 12
+    restart: unless-stopped
+
   vdl:
     build:
       context: .
     image: vdl-ubuntu:latest
     container_name: vdl
+    depends_on:
+      vpn-vdl:
+        condition: service_healthy
+    network_mode: "service:vpn-vdl"
     environment:
       - TZ=America/Sao_Paulo
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - VDL_TOKEN=${VDL_TOKEN}
     volumes:
       - ./data:/data
-      - /data/storage/media:/data/storage/media
+      - ${STORAGE_DIR:-./data/storage}:/data/storage
       - ./logs:/logs
       - ./docs/HOWTO.md:/opt/vdl/HOWTO.md:ro
       - whisper_cache:/cache/whisper
     working_dir: /data
     command: bash -lc "python3 /opt/vdl/checkup.py; [ -f /data/vdl_token.env ] && source /data/vdl_token.env; cat /opt/vdl/HOWTO.md; tail -f /dev/null"
+    restart: unless-stopped
 
 volumes:
   whisper_cache:

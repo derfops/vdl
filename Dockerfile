@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 ENV TZ=America/Sao_Paulo
 ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
 ARG OPENAI_API_KEY=""
@@ -12,7 +13,7 @@ ARG APT_CACHE_BUST=1
 # de debug separada se necessário (aqui buscamos imagem enxuta).
 RUN echo $APT_CACHE_BUST && set -eux; for i in 1 2 3; do \
     apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg curl ca-certificates tzdata && break || sleep 5; \
+    bash ffmpeg curl ca-certificates tzdata && break || sleep 5; \
     done; \
     ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && dpkg-reconfigure -f noninteractive tzdata; \
     rm -rf /var/lib/apt/lists/*
@@ -25,6 +26,8 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 COPY vdl.py /app/vdl.py
 COPY subtitles.py /app/subtitles.py
+COPY vdl_studio /app/vdl_studio
+COPY prompts /app/prompts
 COPY checkup.py /opt/vdl/checkup.py
 COPY docs/HOWTO.md /opt/vdl/HOWTO.md
 RUN chmod +x /app/vdl.py /app/subtitles.py && ln -s /app/vdl.py /usr/local/bin/vdl && ln -s /app/subtitles.py /usr/local/bin/subtitles
