@@ -339,6 +339,8 @@ class JobManager:
         self.orchestrator = orchestrator
         self._lock = threading.Lock()
         self._batches: dict[str, BatchRecord] = {}
+        self._cancelled_batches: set[str] = set()
+        self._cancelled_jobs: set[tuple[str, str]] = set()
         self._load()
 
     def create_download_batch(
@@ -358,6 +360,8 @@ class JobManager:
             raise ValueError(f"URLs invalidas: {', '.join(invalid[:3])}")
         if not (cookie or "").strip():
             raise ValueError("Cookie obrigatorio para downloads via VDL Studio.")
+
+        self._ensure_runtime_ready(mode)
 
         concurrency = max(1, min(concurrency, 4))
         destination = normalize_data_destination(destination)
@@ -414,6 +418,9 @@ class JobManager:
         source_path = normalize_data_container_path(source_path)
         destination = normalize_data_destination(destination or default_destination_for_source(self.data_root, source_path))
         media_files = list_local_media_files(self.data_root, source_path)
+
+        self._ensure_runtime_ready(mode)
+
         concurrency = max(1, min(concurrency, 2))
         width = max(2, len(str(len(media_files))))
         batch_id = f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
@@ -462,12 +469,36 @@ class JobManager:
             batches = sorted(self._batches.values(), key=lambda b: b.created_at, reverse=True)
             return {"batches": [batch.to_dict() for batch in batches]}
 
+    def _ensure_runtime_ready(self, mode: RuntimeMode) -> None:
+        """Valida que o runtime esta pronto ANTES de criar/reprocessar um lote.
+
+        Sem isso o lote era criado e todos os jobs caiam em 'blocked', sem como limpar.
+        """
+        status = self.orchestrator.runtime_status(mode)
+        if status.get("ready"):
+            return
+        runtime = RUNTIMES[mode]
+        worker = status.get("worker") or {}
+        if not worker.get("running"):
+            raise ValueError(
+                f"O runtime {runtime.label} nao esta iniciado. Inicie o runtime antes de criar o lote."
+            )
+        raise ValueError(
+            f"O runtime {runtime.label} ainda nao esta pronto (VPN nao saudavel). Aguarde ficar pronto e tente de novo."
+        )
+
     def _run_batch(self, batch_id: str, token: str | None) -> None:
         with self._lock:
-            batch = self._batches[batch_id]
+            batch = self._batches.get(batch_id)
+            if batch is None:
+                return
             mode = batch.mode
             concurrency = batch.concurrency
-            jobs = list(batch.jobs)
+            # Apenas jobs pendentes: permite reprocessar um lote sem refazer os ja concluidos.
+            jobs = [job for job in batch.jobs if job.status == "queued"]
+
+        if not jobs:
+            return
 
         runtime_status = self.orchestrator.runtime_status(mode)
         if not runtime_status.get("ready"):
@@ -481,6 +512,10 @@ class JobManager:
                 future.result()
 
     def _run_job(self, job: JobRecord, token: str | None) -> None:
+        if self._is_cancelled(job.batch_id, job.job_id):
+            self._transition(job.batch_id, job.job_id, "canceled", "canceled", "Cancelado antes de iniciar.", finished=True)
+            return
+
         if job.job_type == "local":
             self._run_local_job(job)
             return
@@ -507,7 +542,9 @@ class JobManager:
 
         result = self.orchestrator.runner.docker(*args, timeout=24 * 60 * 60)
         logs = "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
-        if result.ok:
+        if self._is_cancelled(job.batch_id, job.job_id):
+            self._transition(job.batch_id, job.job_id, "canceled", "canceled", "Cancelado pelo usuario.", logs=logs, finished=True)
+        elif result.ok:
             self._transition(job.batch_id, job.job_id, "succeeded", "finished", None, logs=logs, finished=True)
         else:
             self._transition(job.batch_id, job.job_id, "failed", "vdl", result.stderr[-2000:] or "Falha no VDL.", logs=logs, finished=True)
@@ -535,7 +572,9 @@ class JobManager:
 
         result = self.orchestrator.runner.docker(*args, timeout=24 * 60 * 60)
         logs = "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
-        if result.ok:
+        if self._is_cancelled(job.batch_id, job.job_id):
+            self._transition(job.batch_id, job.job_id, "canceled", "canceled", "Cancelado pelo usuario.", logs=logs, finished=True)
+        elif result.ok:
             self._transition(job.batch_id, job.job_id, "succeeded", "finished", None, logs=logs, finished=True)
         else:
             self._transition(job.batch_id, job.job_id, "failed", "transcribe", result.stderr[-2000:] or "Falha no VDL.", logs=logs, finished=True)
@@ -553,6 +592,9 @@ class JobManager:
     ) -> None:
         with self._lock:
             job = self._find_job_locked(batch_id, job_id)
+            if job is None:
+                # Lote pode ter sido excluido enquanto o job rodava: ignora em silencio.
+                return
             job.status = status
             job.stage = stage
             job.error = error
@@ -566,11 +608,128 @@ class JobManager:
                 job.logs = logs[-12000:]
             self._save_locked()
 
-    def _find_job_locked(self, batch_id: str, job_id: str) -> JobRecord:
-        for job in self._batches[batch_id].jobs:
+    def _find_job_locked(self, batch_id: str, job_id: str) -> JobRecord | None:
+        batch = self._batches.get(batch_id)
+        if batch is None:
+            return None
+        for job in batch.jobs:
             if job.job_id == job_id:
                 return job
-        raise KeyError(job_id)
+        return None
+
+    def _is_cancelled(self, batch_id: str, job_id: str) -> bool:
+        with self._lock:
+            return batch_id in self._cancelled_batches or (batch_id, job_id) in self._cancelled_jobs
+
+    def _terminate_in_container(self, mode: RuntimeMode, marker: str | None) -> None:
+        """Mata, em best-effort, o processo vdl correspondente dentro do worker.
+
+        O job roda como `vdl <marker> ...` dentro do container, entao pkill -f <marker>
+        encerra o download em andamento. Se nada casar, o job ainda sera marcado como
+        cancelado quando o docker exec retornar.
+        """
+        if not marker:
+            return
+        runtime = RUNTIMES[mode]
+        try:
+            self.orchestrator.runner.docker("exec", runtime.worker, "pkill", "-f", marker, timeout=20)
+        except Exception:
+            pass
+
+    def delete_batch(self, batch_id: str, force: bool = False) -> dict[str, Any]:
+        with self._lock:
+            batch = self._batches.get(batch_id)
+            if batch is None:
+                raise KeyError(batch_id)
+            running = [job for job in batch.jobs if job.status == "running"]
+            if running and not force:
+                raise ValueError(
+                    f"Lote possui {len(running)} job(s) em execucao. Cancele o lote antes de excluir."
+                )
+            del self._batches[batch_id]
+            self._cancelled_batches.discard(batch_id)
+            self._cancelled_jobs = {pair for pair in self._cancelled_jobs if pair[0] != batch_id}
+            self._save_locked()
+        return {"batch_id": batch_id, "deleted": True}
+
+    def cancel_batch(self, batch_id: str) -> dict[str, Any]:
+        with self._lock:
+            batch = self._batches.get(batch_id)
+            if batch is None:
+                raise KeyError(batch_id)
+            self._cancelled_batches.add(batch_id)
+            mode = batch.mode
+            cancelled = 0
+            running: list[tuple[str, str]] = []
+            for job in batch.jobs:
+                if job.status == "queued":
+                    job.status = "canceled"
+                    job.stage = "canceled"
+                    job.error = "Cancelado pelo usuario."
+                    job.updated_at = now_iso()
+                    job.finished_at = job.updated_at
+                    self._cancelled_jobs.add((batch_id, job.job_id))
+                    cancelled += 1
+                elif job.status == "running":
+                    self._cancelled_jobs.add((batch_id, job.job_id))
+                    marker = (job.input_path or job.url) if job.job_type == "local" else job.url
+                    running.append((job.job_id, marker))
+                    cancelled += 1
+            self._save_locked()
+
+        # Encerra os jobs em execucao fora do lock (chamada ao docker pode demorar).
+        for _job_id, marker in running:
+            self._terminate_in_container(mode, marker)
+        return {"batch_id": batch_id, "canceled": cancelled, "running_signaled": len(running)}
+
+    def retry_batch(self, batch_id: str, cookie: str | None = None) -> dict[str, Any]:
+        with self._lock:
+            batch = self._batches.get(batch_id)
+            if batch is None:
+                raise KeyError(batch_id)
+            mode = batch.mode
+            job_type = batch.job_type
+            retryable = [job for job in batch.jobs if job.status in ("blocked", "failed", "canceled")]
+            if not retryable:
+                raise ValueError("Nenhum job para reprocessar (somente bloqueados, falhos ou cancelados).")
+
+        # Valida o runtime antes de reabrir os jobs, para nao recair em 'blocked'.
+        self._ensure_runtime_ready(mode)
+
+        token = None
+        if job_type == "download":
+            if not (cookie or "").strip():
+                raise ValueError("Cookie obrigatorio para reprocessar um lote de download.")
+            token = normalize_cookie_to_vdl_token(cookie)
+
+        with self._lock:
+            batch = self._batches.get(batch_id)
+            if batch is None:
+                raise KeyError(batch_id)
+            self._cancelled_batches.discard(batch_id)
+            reopened = 0
+            for job in batch.jobs:
+                if job.status in ("blocked", "failed", "canceled"):
+                    self._cancelled_jobs.discard((batch_id, job.job_id))
+                    job.status = "queued"
+                    job.stage = "queued"
+                    job.error = None
+                    job.started_at = None
+                    job.finished_at = None
+                    job.updated_at = now_iso()
+                    reopened += 1
+            self._save_locked()
+            snapshot = batch.to_dict()
+
+        thread = threading.Thread(
+            target=self._run_batch,
+            args=(batch_id, token),
+            daemon=True,
+            name=f"vdl-studio-{batch_id}-retry",
+        )
+        thread.start()
+        snapshot["reopened"] = reopened
+        return snapshot
 
     def _load(self) -> None:
         if not self.state_file.exists():

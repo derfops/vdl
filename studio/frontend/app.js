@@ -220,6 +220,7 @@ function statusLabel(status) {
     succeeded: "Concluído",
     failed: "Falhou",
     blocked: "Bloqueado",
+    canceled: "Cancelado",
   }[status] || status;
 }
 
@@ -228,6 +229,7 @@ function statusClass(status) {
   if (status === "running") return "ready";
   if (status === "failed" || status === "blocked") return "error";
   if (status === "queued") return "warn";
+  if (status === "canceled") return "";
   return "off";
 }
 
@@ -1123,7 +1125,7 @@ function renderJobs() {
   setText("#libraryUpdatedAt", `sync ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`);
 }
 
-const TERMINAL_STATUSES = ["succeeded", "failed", "blocked"];
+const TERMINAL_STATUSES = ["succeeded", "failed", "blocked", "canceled"];
 
 function checkBatchCompletion() {
   if (!state.batchDoneSeen) state.batchDoneSeen = new Set();
@@ -1136,10 +1138,12 @@ function checkBatchCompletion() {
     state.batchDoneSeen.add(batch.batch_id);
     if (firstRun) return; // não reporta lotes já concluídos na carga inicial
     const ok = jobs.filter((job) => job.status === "succeeded").length;
-    const fail = jobs.length - ok;
+    const canceled = jobs.filter((job) => job.status === "canceled").length;
+    const fail = jobs.length - ok - canceled;
     const where = batch.destination ? ` · 📁 ${escapeHtml(batch.destination)}` : "";
+    const extra = `${fail ? ` / ${fail} falha(s)` : ""}${canceled ? ` / ${canceled} cancelado(s)` : ""}`;
     toast(
-      `Lote <strong>${escapeHtml(batch.batch_id)}</strong> concluído · ${ok} ok${fail ? ` / ${fail} falha(s)` : ""}${where}`,
+      `Lote <strong>${escapeHtml(batch.batch_id)}</strong> concluído · ${ok} ok${extra}${where}`,
       fail ? "error" : "ok",
     );
   });
@@ -1166,6 +1170,25 @@ const jobsHeaderHtml = `
   </div>
 `;
 
+function batchActionsHtml(batch) {
+  const jobs = batch.jobs || [];
+  const id = escapeHtml(batch.batch_id);
+  const hasRunning = jobs.some((job) => job.status === "running");
+  const hasPending = jobs.some((job) => job.status === "queued" || job.status === "running");
+  const hasRetryable = jobs.some((job) => ["blocked", "failed", "canceled"].includes(job.status));
+  const buttons = [];
+  if (hasPending) {
+    buttons.push(`<button class="batch-action" data-batch-action="cancel" data-batch-id="${id}" type="button">Cancelar</button>`);
+  }
+  if (hasRetryable && !hasRunning) {
+    buttons.push(`<button class="batch-action" data-batch-action="retry" data-batch-id="${id}" type="button">Reprocessar</button>`);
+  }
+  buttons.push(
+    `<button class="batch-action danger" data-batch-action="delete" data-batch-id="${id}" type="button"${hasRunning ? ' title="Cancele o lote antes de excluir"' : ""}>Excluir</button>`,
+  );
+  return `<span class="batch-actions">${buttons.join("")}</span>`;
+}
+
 function renderJobsHistory(selector, batches) {
   const table = $(selector);
   if (!table) return;
@@ -1184,22 +1207,77 @@ function renderJobsHistory(selector, batches) {
           <span class="chip cyan" style="width:28px;height:28px;font-size:13px;border-radius:8px">▦</span>
           <span class="batch-id">${escapeHtml(batch.batch_id)}</span>
           <span class="batch-meta">${meta}</span>
+          ${batchActionsHtml(batch)}
         </div>`;
       return head + jobsHeaderHtml + jobs.map(jobRowHtml).join("");
     })
     .join("");
+  table.querySelectorAll("[data-batch-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const batchId = button.dataset.batchId;
+      const batch = state.batches.find((item) => item.batch_id === batchId);
+      if (button.dataset.batchAction === "cancel") cancelBatch(batchId);
+      else if (button.dataset.batchAction === "retry") retryBatch(batchId, batch);
+      else if (button.dataset.batchAction === "delete") deleteBatch(batchId);
+    });
+  });
+}
+
+async function cancelBatch(batchId) {
+  if (!window.confirm(`Cancelar os jobs pendentes do lote ${batchId}?`)) return;
+  try {
+    const result = await api(`/jobs/batch/${encodeURIComponent(batchId)}/cancel`, { method: "POST" });
+    toast(`Lote <strong>${escapeHtml(batchId)}</strong> cancelado · ${result.canceled} job(s).`, "ok");
+    await refreshJobs();
+  } catch (error) {
+    toast(`Falha ao cancelar: ${escapeHtml(error.message)}`, "error");
+  }
+}
+
+async function retryBatch(batchId, batch) {
+  const isDownload = (batch?.job_type || "download") === "download";
+  let cookie = null;
+  if (isDownload) {
+    cookie = window.prompt("Cole o cookie/token para reprocessar os downloads deste lote:");
+    if (cookie === null) return; // cancelou o prompt
+  } else if (!window.confirm(`Reprocessar os jobs pendentes do lote ${batchId}?`)) {
+    return;
+  }
+  try {
+    await api(`/jobs/batch/${encodeURIComponent(batchId)}/retry`, {
+      method: "POST",
+      body: JSON.stringify({ cookie }),
+    });
+    state.batchDoneSeen?.delete(batchId);
+    toast(`Reprocessando lote <strong>${escapeHtml(batchId)}</strong>.`, "ok");
+    await refreshJobs();
+  } catch (error) {
+    toast(`Falha ao reprocessar: ${escapeHtml(error.message)}`, "error");
+  }
+}
+
+async function deleteBatch(batchId) {
+  if (!window.confirm(`Excluir o lote ${batchId}? Isso remove o histórico dos jobs (não apaga arquivos já baixados).`)) return;
+  try {
+    await api(`/jobs/batch/${encodeURIComponent(batchId)}`, { method: "DELETE" });
+    state.batchDoneSeen?.delete(batchId);
+    toast(`Lote <strong>${escapeHtml(batchId)}</strong> excluído.`, "ok");
+    await refreshJobs();
+  } catch (error) {
+    toast(`Falha ao excluir: ${escapeHtml(error.message)}`, "error");
+  }
 }
 
 function jobProgress(job) {
   if (job.status === "succeeded") return 1;
-  if (job.status === "failed" || job.status === "blocked") return 1;
+  if (["failed", "blocked", "canceled"].includes(job.status)) return 1;
   if (job.status === "running") return 0.6;
   return 0;
 }
 
 function progressHtml(job) {
   const pct = Math.round(jobProgress(job) * 100);
-  const color = job.status === "failed" || job.status === "blocked" ? "var(--red)" : "var(--cyan)";
+  const color = ["failed", "blocked", "canceled"].includes(job.status) ? "var(--red)" : "var(--cyan)";
   const label = job.status === "queued" ? "—" : `${pct}%`;
   return `<div class="progress-cell"><div class="progress-track"><i style="width:${pct}%;background:${color}"></i></div><span>${label}</span></div>`;
 }
