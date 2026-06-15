@@ -204,6 +204,19 @@ function allJobs() {
   return state.batches.flatMap((batch) => batch.jobs.map((job) => ({ ...job, batch })));
 }
 
+// Idade legível de um instante ISO (tz-aware) contra o relógio do servidor.
+function relativeAge(iso) {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const now = state.serverNow ? new Date(state.serverNow).getTime() : Date.now();
+  const sec = Math.max(0, Math.round((now - then) / 1000));
+  if (sec < 60) return `há ${sec}s`;
+  if (sec < 3600) return `há ${Math.floor(sec / 60)} min`;
+  if (sec < 86400) return `há ${Math.floor(sec / 3600)} h`;
+  return `há ${Math.floor(sec / 86400)} d`;
+}
+
 function parseUrls(value) {
   return value
     .split(/\r?\n/)
@@ -229,6 +242,7 @@ function statusLabel(status) {
     failed: "Falhou",
     blocked: "Bloqueado",
     canceled: "Cancelado",
+    interrupted: "Interrompido",
   }[status] || status;
 }
 
@@ -237,6 +251,7 @@ function statusClass(status) {
   if (status === "running") return "ready";
   if (status === "failed" || status === "blocked") return "error";
   if (status === "queued") return "warn";
+  if (status === "interrupted") return "warn";
   if (status === "canceled") return "";
   return "off";
 }
@@ -1221,7 +1236,7 @@ function renderJobs() {
   setText("#libraryUpdatedAt", `sync ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`);
 }
 
-const TERMINAL_STATUSES = ["succeeded", "failed", "blocked", "canceled"];
+const TERMINAL_STATUSES = ["succeeded", "failed", "blocked", "canceled", "interrupted"];
 
 function checkBatchCompletion() {
   if (!state.batchDoneSeen) state.batchDoneSeen = new Set();
@@ -1235,9 +1250,10 @@ function checkBatchCompletion() {
     if (firstRun) return; // não reporta lotes já concluídos na carga inicial
     const ok = jobs.filter((job) => job.status === "succeeded").length;
     const canceled = jobs.filter((job) => job.status === "canceled").length;
-    const fail = jobs.length - ok - canceled;
+    const interrupted = jobs.filter((job) => job.status === "interrupted").length;
+    const fail = jobs.length - ok - canceled - interrupted;
     const where = batch.destination ? ` · 📁 ${escapeHtml(batch.destination)}` : "";
-    const extra = `${fail ? ` / ${fail} falha(s)` : ""}${canceled ? ` / ${canceled} cancelado(s)` : ""}`;
+    const extra = `${fail ? ` / ${fail} falha(s)` : ""}${canceled ? ` / ${canceled} cancelado(s)` : ""}${interrupted ? ` / ${interrupted} interrompido(s)` : ""}`;
     toast(
       `Lote <strong>${escapeHtml(batch.batch_id)}</strong> concluído · ${ok} ok${extra}${where}`,
       fail ? "error" : "ok",
@@ -1276,7 +1292,7 @@ function batchActionsHtml(batch) {
   const id = escapeHtml(batch.batch_id);
   const hasRunning = jobs.some((job) => job.status === "running");
   const hasPending = jobs.some((job) => job.status === "queued" || job.status === "running");
-  const hasRetryable = jobs.some((job) => ["blocked", "failed", "canceled"].includes(job.status));
+  const hasRetryable = jobs.some((job) => ["blocked", "failed", "canceled", "interrupted"].includes(job.status));
   const buttons = [];
   if ((batch.job_type || "download") === "download") {
     buttons.push(`<button class="batch-action" data-batch-action="import" data-batch-id="${id}" type="button" title="Carregar URLs, nomes e opções no formulário">Importar</button>`);
@@ -1419,14 +1435,14 @@ async function deleteBatch(batchId) {
 
 function jobProgress(job) {
   if (job.status === "succeeded") return 1;
-  if (["failed", "blocked", "canceled"].includes(job.status)) return 1;
+  if (["failed", "blocked", "canceled", "interrupted"].includes(job.status)) return 1;
   if (job.status === "running") return 0.6;
   return 0;
 }
 
 function progressHtml(job) {
   const pct = Math.round(jobProgress(job) * 100);
-  const color = ["failed", "blocked", "canceled"].includes(job.status) ? "var(--red)" : "var(--cyan)";
+  const color = ["failed", "blocked", "canceled", "interrupted"].includes(job.status) ? "var(--red)" : "var(--cyan)";
   const label = job.status === "queued" ? "—" : `${pct}%`;
   return `<div class="progress-cell"><div class="progress-track"><i style="width:${pct}%;background:${color}"></i></div><span>${label}</span></div>`;
 }
@@ -1451,7 +1467,7 @@ function renderQueue(selector, jobs) {
             <span class="truncate">${escapeHtml(jobInputLabel(job))}</span>
             <span class="job-meta">${escapeHtml(modes[job.mode])}</span>
             <span class="job-meta">${progressHtml(job)}</span>
-            <span class="job-meta">${escapeHtml(formatTime(job.updated_at))}</span>
+            <span class="job-meta" title="${escapeHtml(formatTime(job.updated_at))}">${escapeHtml(job.status === "running" ? `rodando ${relativeAge(job.updated_at)}` : relativeAge(job.updated_at) || formatTime(job.updated_at))}</span>
             <span class="job-actions">${previewButton(job)}</span>
           </div>
         `,
@@ -1464,6 +1480,7 @@ async function refreshJobs() {
   try {
     const data = await api("/jobs");
     state.batches = data.batches || [];
+    state.serverNow = data.server_now || null;
     renderJobs();
   } catch (error) {
     const message = `<div class="table-empty error">Falha ao carregar jobs: ${escapeHtml(error.message)}</div>`;
