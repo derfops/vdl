@@ -37,6 +37,7 @@ cookie.txt
 output_dir/
 jenkins_output/
 logs/
+data/
 
 # Segredos e dados locais (NUNCA versionar)
 .env
@@ -47,6 +48,11 @@ servers.json
 *.key
 *.crt
 *.pem
+*.ovpn
+*.zip
+glutenn_openvpn.zip
+windscribe/
+Windscribe-*.conf
 
 # Arquivos de sistema operacional
 .DS_Store
