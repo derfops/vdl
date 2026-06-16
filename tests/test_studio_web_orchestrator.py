@@ -360,6 +360,48 @@ class FilenameTests(unittest.TestCase):
             ))
 
 
+class RetrySingleJobTests(unittest.TestCase):
+    def test_retry_single_failed_job_keeps_filename(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            orchestrator = FakeOrchestrator(ready=True)
+            manager = JobManager(Path(tmpdir), orchestrator=orchestrator)
+            batch = _make_blocked_batch(manager, "batch-rj", ["succeeded", "failed", "succeeded"])
+            failed = batch.jobs[1]
+            failed.filename = "02-aula.mp4"
+            failed.url = "https://example.com/aula.mpd"
+
+            snapshot = manager.retry_job("batch-rj", "job-02", cookie="session=abc")
+            self.assertEqual(snapshot["status"], "queued")
+            self.assertEqual(snapshot["filename"], "02-aula.mp4")  # mesmo nome
+
+            _wait_until(lambda: all(
+                job["status"] in {"succeeded", "failed", "blocked", "canceled", "interrupted"}
+                for job in manager.list_batches()["batches"][0]["jobs"]
+            ))
+            jobs = {j["job_id"]: j for j in manager.list_batches()["batches"][0]["jobs"]}
+            self.assertEqual(jobs["job-02"]["status"], "succeeded")
+            # só o job pedido rodou; os outros seguem succeeded sem reexecutar
+            self.assertEqual(jobs["job-01"]["status"], "succeeded")
+            self.assertEqual(jobs["job-03"]["status"], "succeeded")
+            # o worker foi chamado com o MESMO filename do job
+            call = next(c for c in orchestrator.runner.calls if "vdl" in c and "02-aula.mp4" in c)
+            self.assertIn("02-aula.mp4", call)
+
+    def test_retry_single_download_requires_cookie(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = JobManager(Path(tmpdir), orchestrator=FakeOrchestrator(ready=True))
+            _make_blocked_batch(manager, "batch-rj2", ["failed"])
+            with self.assertRaisesRegex(ValueError, "Cookie obrigatorio"):
+                manager.retry_job("batch-rj2", "job-01")
+
+    def test_retry_single_rejects_succeeded_job(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = JobManager(Path(tmpdir), orchestrator=FakeOrchestrator(ready=True))
+            _make_blocked_batch(manager, "batch-rj3", ["succeeded"])
+            with self.assertRaisesRegex(ValueError, "So e possivel reprocessar"):
+                manager.retry_job("batch-rj3", "job-01", cookie="session=abc")
+
+
 class RenameJobTests(unittest.TestCase):
     def _manager_with_succeeded_file(self, tmpdir):
         data_root = Path(tmpdir)

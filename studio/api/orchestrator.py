@@ -740,6 +740,58 @@ class JobManager:
         snapshot["reopened"] = reopened
         return snapshot
 
+    def retry_job(self, batch_id: str, job_id: str, cookie: str | None = None) -> dict[str, Any]:
+        """Reprocessa UM unico job que falhou, preservando o mesmo nome de arquivo."""
+        with self._lock:
+            batch = self._batches.get(batch_id)
+            if batch is None:
+                raise KeyError(batch_id)
+            job = next((item for item in batch.jobs if item.job_id == job_id), None)
+            if job is None:
+                raise KeyError(job_id)
+            if job.status not in ("blocked", "failed", "canceled", "interrupted"):
+                raise ValueError("So e possivel reprocessar um job que falhou, foi bloqueado, cancelado ou interrompido.")
+            mode = batch.mode
+            job_type = job.job_type
+
+        # Valida o runtime antes de reabrir o job, para nao recair em 'blocked'.
+        self._ensure_runtime_ready(mode)
+
+        token = None
+        if job_type == "download":
+            if not (cookie or "").strip():
+                raise ValueError("Cookie obrigatorio para reprocessar um download.")
+            token = normalize_cookie_to_vdl_token(cookie)
+
+        with self._lock:
+            batch = self._batches.get(batch_id)
+            if batch is None:
+                raise KeyError(batch_id)
+            job = next((item for item in batch.jobs if item.job_id == job_id), None)
+            if job is None:
+                raise KeyError(job_id)
+            self._cancelled_batches.discard(batch_id)
+            self._cancelled_jobs.discard((batch_id, job_id))
+            # filename NAO muda: o arquivo e regravado com o mesmo nome.
+            job.status = "queued"
+            job.stage = "queued"
+            job.error = None
+            job.started_at = None
+            job.finished_at = None
+            job.updated_at = now_iso()
+            self._save_locked()
+            snapshot = job.to_dict()
+            job_ref = job
+
+        thread = threading.Thread(
+            target=self._run_job,
+            args=(job_ref, token),
+            daemon=True,
+            name=f"vdl-studio-{batch_id}-{job_id}-retry",
+        )
+        thread.start()
+        return snapshot
+
     def rename_job(self, batch_id: str, job_id: str, new_name: str) -> dict[str, Any]:
         """Renomeia o arquivo de saida de um job concluido no disco e no registro."""
         new_filename = sanitize_output_filename(new_name)

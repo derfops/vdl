@@ -1267,6 +1267,13 @@ function renameButton(job) {
   return `<button class="table-action" data-rename-batch="${escapeHtml(job.batch_id)}" data-rename-job="${escapeHtml(job.job_id)}" data-rename-current="${escapeHtml(job.filename || "")}" type="button">Renomear</button>`;
 }
 
+const RETRYABLE_JOB_STATUSES = ["failed", "blocked", "canceled", "interrupted"];
+
+function retryJobButton(job) {
+  if (!RETRYABLE_JOB_STATUSES.includes(job.status)) return "";
+  return `<button class="table-action" data-retry-batch="${escapeHtml(job.batch_id)}" data-retry-job="${escapeHtml(job.job_id)}" data-retry-type="${escapeHtml(job.job_type || "download")}" type="button" title="Reprocessar só este arquivo, mantendo o mesmo nome">Reprocessar</button>`;
+}
+
 function jobRowHtml(job) {
   return `
     <div class="job-row" title="${escapeHtml(job.error || job.url)}">
@@ -1276,7 +1283,7 @@ function jobRowHtml(job) {
       <span class="job-meta">${escapeHtml(modes[job.mode])}</span>
       <span class="job-meta">${escapeHtml(processingLabel(job.processing_mode))}</span>
       <span class="job-meta">${escapeHtml(formatTime(job.updated_at))}</span>
-      <span class="job-actions">${renameButton(job)}${previewButton(job)}</span>
+      <span class="job-actions">${retryJobButton(job)}${renameButton(job)}${previewButton(job)}</span>
     </div>
   `;
 }
@@ -1368,6 +1375,27 @@ function importBatch(batch) {
   renderNamePreview();
   updateDownloadValidation(true);
   toast(`Dados do lote <strong>${escapeHtml(batch.batch_id)}</strong> importados · cole o cookie e crie o novo lote.`, "ok");
+}
+
+async function retryJob(batchId, jobId, jobType) {
+  let cookie = null;
+  if ((jobType || "download") === "download") {
+    cookie = window.prompt("Cole o cookie/token para reprocessar este arquivo (mantém o mesmo nome):");
+    if (cookie === null) return; // cancelou o prompt
+  } else if (!window.confirm(`Reprocessar o job ${jobId}?`)) {
+    return;
+  }
+  try {
+    await api(`/jobs/batch/${encodeURIComponent(batchId)}/job/${encodeURIComponent(jobId)}/retry`, {
+      method: "POST",
+      body: JSON.stringify({ cookie }),
+    });
+    state.batchDoneSeen?.delete(batchId);
+    toast(`Reprocessando <strong>${escapeHtml(jobId)}</strong> · mesmo nome.`, "ok");
+    await refreshJobs();
+  } catch (error) {
+    toast(`Falha ao reprocessar: ${escapeHtml(error.message)}`, "error");
+  }
 }
 
 async function renameJob(batchId, jobId, current) {
@@ -1702,6 +1730,13 @@ function bindEvents() {
     event.preventDefault();
     event.stopPropagation();
     renameJob(button.dataset.renameBatch, button.dataset.renameJob, button.dataset.renameCurrent);
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-retry-job]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    retryJob(button.dataset.retryBatch, button.dataset.retryJob, button.dataset.retryType);
   });
   $$(".nav-item").forEach((button) => button.addEventListener("click", () => setPanel(button.dataset.panel)));
   $$("[data-panel-jump]").forEach((button) => {

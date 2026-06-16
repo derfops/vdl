@@ -237,6 +237,16 @@ class RenameJobRequest(BaseModel):
     new_name: str
 
 
+@app.post("/api/jobs/batch/{batch_id}/job/{job_id}/retry", dependencies=[Depends(require_auth)])
+def retry_job(batch_id: str, job_id: str, request: RetryBatchRequest | None = None) -> dict[str, object]:
+    try:
+        return jobs.retry_job(batch_id, job_id, cookie=request.cookie if request else None)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Job nao encontrado.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/jobs/batch/{batch_id}/job/{job_id}/rename", dependencies=[Depends(require_auth)])
 def rename_job(batch_id: str, job_id: str, request: RenameJobRequest) -> dict[str, object]:
     try:
