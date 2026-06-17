@@ -88,6 +88,7 @@ const state = {
   selectedJobId: null,
   currentFilePath: "/data",
   fileDialogTarget: "destination",
+  localDestDirty: false,
   credentialValidated: false,
   credentialValue: "",
   previewUrl: "",
@@ -819,7 +820,8 @@ function updateDownloadValidation(showDetails = false) {
 
 function localValidation() {
   const sourcePath = $("#localSourceInput")?.value.trim() || "";
-  const destination = $("#localDestinationInput")?.value.trim() || "";
+  // Destino vazio = mesma pasta da origem (default). Valida o destino efetivo.
+  const destination = $("#localDestinationInput")?.value.trim() || sourcePath;
   const issues = [];
   const warnings = [];
   if (!isDataPath(sourcePath)) issues.push("Pasta de entrada deve ficar dentro de /data.");
@@ -836,7 +838,7 @@ function updateLocalValidation(showDetails = false) {
   const result = localValidation();
   const createButton = $("#createLocalBatchButton");
   setFieldValidity("#localSourceInput", isDataPath($("#localSourceInput")?.value || ""));
-  setFieldValidity("#localDestinationInput", isDataPath($("#localDestinationInput")?.value || ""));
+  setFieldValidity("#localDestinationInput", isDataPath($("#localDestinationInput")?.value.trim() || $("#localSourceInput")?.value.trim() || ""));
   if (createButton) createButton.disabled = !result.valid;
 
   if (!result.valid) {
@@ -1605,7 +1607,8 @@ function syncDestination(path) {
 
 function syncLocalSource(path) {
   $("#localSourceInput").value = path;
-  if (!$("#localDestinationInput").value.trim()) {
+  // Destino acompanha a origem por padrão; só diverge se o usuário editou o destino.
+  if (!state.localDestDirty) {
     $("#localDestinationInput").value = path;
   }
   updateLocalValidation();
@@ -1669,7 +1672,8 @@ function clearActiveOperation() {
 }
 
 function clearLocalOperation() {
-  $("#localSourceInput").value = $("#currentDestinationLabel")?.textContent || "/data/downloads";
+  state.localDestDirty = false;
+  $("#localSourceInput").value = $("#currentDestinationLabel")?.textContent || "/data/storage/media";
   $("#localDestinationInput").value = $("#localSourceInput").value;
   $("#localWhisperModel").value = "base";
   $("#localConcurrencyInput").value = "1";
@@ -1791,7 +1795,11 @@ function bindEvents() {
     });
   });
   $("#localSourceInput").addEventListener("input", () => updateLocalValidation());
-  $("#localDestinationInput").addEventListener("input", () => updateLocalValidation());
+  $("#localDestinationInput").addEventListener("input", () => {
+    // Campo vazio volta a seguir a origem; qualquer texto marca escolha manual.
+    state.localDestDirty = $("#localDestinationInput").value.trim().length > 0;
+    updateLocalValidation();
+  });
   $("#localWhisperModel").addEventListener("change", () => updateLocalValidation());
   $("#localUseGpu").addEventListener("change", () => updateLocalValidation());
   $("#librarySearch").addEventListener("input", renderLibraryBrowser);
@@ -1822,6 +1830,7 @@ function bindEvents() {
     if (state.fileDialogTarget === "localSource") {
       syncLocalSource(state.currentFilePath);
     } else if (state.fileDialogTarget === "localDestination") {
+      state.localDestDirty = true;  // escolha explícita de destino pelo usuário
       syncLocalDestination(state.currentFilePath);
     } else if (state.fileDialogTarget === "library") {
       loadLibrary(state.currentFilePath);

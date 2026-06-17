@@ -213,9 +213,14 @@ def main():
                     help="Diretório onde os arquivos .srt serão gravados (padrão: ao lado da mídia).")
     args = ap.parse_args()
 
-    import torch
-    if args.threads > 0:
-        torch.set_num_threads(args.threads)
+    # torch é opcional: faster-whisper usa CTranslate2, não torch. Mantemos o tuning
+    # de threads como best-effort quando torch estiver presente.
+    try:
+        import torch
+        if args.threads > 0:
+            torch.set_num_threads(args.threads)
+    except ImportError:
+        pass
 
     # Reaproveita o helper compartilhado para garantir comportamento consistente
     # com o vdl.py (cache de modelo via VDL_WHISPER_CACHE, etc.).
