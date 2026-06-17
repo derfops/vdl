@@ -26,6 +26,10 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 COPY vdl.py /app/vdl.py
 COPY subtitles.py /app/subtitles.py
+# Modulo compartilhado de transcricao (Whisper) importado por vdl.py e subtitles.py.
+# Sem ele, `from _transcription import load_whisper_model` quebra e a transcricao
+# local falha silenciosamente (o job ainda sai 0 e aparece como "Concluido").
+COPY _transcription.py /app/_transcription.py
 COPY vdl_studio /app/vdl_studio
 COPY prompts /app/prompts
 COPY checkup.py /opt/vdl/checkup.py
