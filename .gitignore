@@ -27,6 +27,7 @@ build/
 # Arquivos de ambiente virtual do Python
 # Se você decidir usar um venv, ele será ignorado.
 .venv/
+.venv-vdl/
 venv/
 ENV/
 env/

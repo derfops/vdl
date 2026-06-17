@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+#
+# vdl-trans — atalho para transcrição LOCAL (sem Docker) no macOS/Linux.
+#
+# Roda o vdl.py do repositório usando o venv local (.venv-vdl), em modo
+# --local --transcribe, com o destino dos artefatos = a própria pasta do
+# alvo (a pasta do arquivo, ou a pasta em si quando o alvo é um diretório).
+#
+# Uso:
+#   vdl-trans <arquivo|pasta> [--model tiny|base|small|medium|large] [flags extras do vdl.py]
+#
+# Exemplos:
+#   vdl-trans "video.mp4"                      # transcreve 1 arquivo (modelo medium)
+#   vdl-trans ~/Videos                         # transcreve a pasta inteira (recursivo)
+#   vdl-trans aula.mp4 --model small           # modelo mais rápido
+#   VDL_MODEL=large vdl-trans aula.mp4          # modelo via variável de ambiente
+#   vdl-trans aula.mp4 --context                # repassa --context (gera contexto via OpenAI)
+#
+# Modelo padrão: medium (bom custo/benefício em CPU no Mac). Sobrescreva com
+# --model X (logo após o alvo) ou com a variável de ambiente VDL_MODEL.
+set -euo pipefail
+
+# --- Resolve o caminho real do script, seguindo symlinks ---
+# (este script normalmente é instalado como symlink em ~/.local/bin ou
+#  /usr/local/bin, então $0 aponta para o link, não para o arquivo real).
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+REPO="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
+
+PY="$REPO/.venv-vdl/bin/python"
+VDL="$REPO/vdl.py"
+MODEL="${VDL_MODEL:-medium}"
+
+usage() {
+  # Imprime o bloco de comentário do cabeçalho (a partir da linha 3), parando
+  # na primeira linha que não for comentário. Robusto a edições no cabeçalho.
+  awk 'NR>=3 && /^#/ {sub(/^# ?/,""); print; next} NR>=3 {exit}' "$SOURCE"
+}
+
+# --- Validação de pré-requisitos ---
+if [ ! -x "$PY" ]; then
+  echo "vdl-trans: venv não encontrado em '$PY'." >&2
+  echo "           Crie-o uma vez com:" >&2
+  echo "             cd \"$REPO\" && python3 -m venv .venv-vdl && ./.venv-vdl/bin/pip install -r requirements.txt" >&2
+  echo "           (veja docs/TRANSCRICAO-LOCAL.md)" >&2
+  exit 1
+fi
+if [ ! -f "$VDL" ]; then
+  echo "vdl-trans: não encontrei vdl.py em '$VDL'." >&2
+  exit 1
+fi
+
+# --- Argumentos ---
+if [ "$#" -eq 0 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  usage
+  exit 0
+fi
+
+TARGET="$1"; shift
+
+# --model X opcional, logo após o alvo (antes das flags extras do vdl.py)
+if [ "${1:-}" = "--model" ]; then
+  if [ "$#" -lt 2 ]; then
+    echo "vdl-trans: --model requer um valor (tiny|base|small|medium|large)." >&2
+    exit 1
+  fi
+  MODEL="$2"; shift 2
+fi
+
+if [ ! -e "$TARGET" ]; then
+  echo "vdl-trans: alvo não encontrado: $TARGET" >&2
+  exit 1
+fi
+
+# --- Caminho absoluto + destino = a própria pasta do alvo ---
+if [ -d "$TARGET" ]; then
+  TARGET="$(cd "$TARGET" >/dev/null 2>&1 && pwd)"
+  DEST="$TARGET"
+else
+  TARGET="$(cd "$(dirname "$TARGET")" >/dev/null 2>&1 && pwd)/$(basename "$TARGET")"
+  DEST="$(dirname "$TARGET")"
+fi
+
+# Roda a partir do repo para que o diretório logs/ do vdl.py caia no repo
+# (ignorado pelo git), e não na pasta de onde o usuário chamou o comando.
+cd "$REPO"
+
+exec "$PY" "$VDL" "$TARGET" --local --transcribe -d "$DEST" --whisper-model "$MODEL" "$@"
