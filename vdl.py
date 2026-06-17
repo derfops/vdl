@@ -120,9 +120,9 @@ def check_dependencies(args):
         has_error = True
 
     if args.transcribe and not args.unified_mode:
-        try: import whisper
+        try: import faster_whisper  # noqa: F401
         except ImportError:
-            print_error("Dependência para transcrição local não encontrada: 'openai-whisper'. Use: pip install openai-whisper")
+            print_error("Dependência para transcrição local não encontrada: 'faster-whisper'. Use: pip install faster-whisper")
             has_error = True
 
     if args.context or args.unified_mode:
@@ -519,19 +519,14 @@ def load_whisper_model(model_name, use_gpu):
     """Wrapper amigável (com logs) sobre _transcription.load_whisper_model.
     Retorna (model, device) ou (None, None) em caso de falha."""
     try:
-        import torch  # noqa: F401  - usado dentro do helper para checar CUDA
-        from _transcription import load_whisper_model as _load
+        from _transcription import load_whisper_model as _load, _cuda_available
     except ImportError as e:
         print_error(f"Dependência ausente: {e}")
         return None, None
     try:
-        # Pré-aviso de fallback antes de carregar
-        try:
-            import torch
-            if use_gpu and not torch.cuda.is_available():
-                print_to_console_and_log("[AVISO] CUDA não disponível. Usando CPU.", C_YELLOW)
-        except Exception:
-            pass
+        # Pré-aviso de fallback antes de carregar (faster-whisper usa CTranslate2, não torch)
+        if use_gpu and not _cuda_available():
+            print_to_console_and_log("[AVISO] CUDA não disponível. Usando CPU.", C_YELLOW)
         print_info(f"Carregando modelo Whisper '{model_name}'...")
         model, device = _load(model_name, use_gpu=use_gpu)
         print_info(f"Modelo carregado (device={device}).")
@@ -865,7 +860,13 @@ PRÉ-REQUISITOS DE AUTENTICAÇÃO:
                 transcribe_and_generate_context_via_api(audio_path, base_output_path, args.directory)
             elif args.transcribe:
                 transcription_text = transcribe_audio_local(audio_path, args.whisper_model, args.gpu, args.directory)
-                if transcription_text and args.context:
+                # Falha real (modelo não carregou, erro na transcrição) retorna None:
+                # propaga exit code != 0 para o Studio NÃO marcar o job como "Concluído"
+                # sem ter gerado .txt. Texto vazio ("") é áudio sem fala, não é falha.
+                if transcription_text is None:
+                    print_error("Transcrição local falhou: nenhum texto gerado.")
+                    sys.exit(1)
+                if args.context:
                     generate_context_from_text(transcription_text, base_output_path, args.directory)
 
     # Consolidação opcional de todos os contextos gerados em um e-Book único

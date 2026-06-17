@@ -19,10 +19,9 @@ RUN echo $APT_CACHE_BUST && set -eux; for i in 1 2 3; do \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt
-# Torch em wheel CPU-only (~750MB vs ~2.5GB CUDA). Para GPU, sobreponha em
-# build-arg/runtime substituindo o pip install do torch.
+# faster-whisper (CTranslate2) dispensa torch: imagem bem menor e transcrição
+# ~4x mais rápida em CPU. Para GPU, instale CT2/onnxruntime CUDA conforme necessário.
 RUN pip install --upgrade pip && \
-    pip install --extra-index-url https://download.pytorch.org/whl/cpu torch && \
     pip install -r requirements.txt
 COPY vdl.py /app/vdl.py
 COPY subtitles.py /app/subtitles.py

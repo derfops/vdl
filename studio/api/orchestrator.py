@@ -421,6 +421,11 @@ class JobManager:
     ) -> dict[str, Any]:
         if whisper_model not in WHISPER_MODELS:
             raise ValueError("Modelo Whisper invalido.")
+        # Transcricao (Whisper local ou OpenAI) NAO precisa de VPN: usa rede apenas
+        # para o download unico do modelo (Whisper) ou para a API (OpenAI), ambos
+        # direto pela internet. Forcamos o runtime sem-VPN (novpn) para nao acoplar a
+        # transcricao a saude da VPN nem rotear o trafego pelo netns do gluetun.
+        mode = "none"
         source_path = normalize_data_container_path(source_path)
         destination = normalize_data_destination(destination or default_destination_for_source(self.data_root, source_path))
         media_files = list_local_media_files(self.data_root, source_path)
