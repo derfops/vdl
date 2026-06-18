@@ -66,8 +66,8 @@ Sanidade (deve imprimir `imports OK`):
 ## 3. O atalho `vdl-trans`
 
 `bin/vdl-trans` é um wrapper que já assume os defaults bons para transcrição local:
-destino = a própria pasta do alvo, modelo `medium` e **engine `auto`** (GPU no Mac,
-senão CPU).
+destino = a própria pasta do alvo, modelo `large` (large-v3) e **engine `auto`**
+(GPU no Mac, senão CPU).
 
 ### Instalação no PATH
 
@@ -94,7 +94,7 @@ vdl-trans aula.mp4 --context          # repassa flags extras ao vdl.py (aqui: --
 vdl-trans --help
 ```
 
-- **Modelo padrão:** `medium`. Sobrescreva com `--model X` (logo após o alvo) ou env `VDL_MODEL`.
+- **Modelo padrão:** `large` (large-v3). Sobrescreva com `--model X` (logo após o alvo) ou env `VDL_MODEL`. Em CPU o `large` é lento — use `--model medium`/`--engine cpu` se não estiver na GPU.
 - **Engine padrão:** `auto`. Sobrescreva com `--engine auto|mlx|cpu` ou env `VDL_ENGINE`.
 - **Flags extras** após o alvo são repassadas ao `vdl.py`; como dependem do fluxo dele
   (ex.: `--context`, que usa a OpenAI), **forçam a engine `cpu`** automaticamente.
@@ -154,13 +154,13 @@ encontrados (o modelo é carregado uma única vez para o lote, em ambas as engin
 | `tiny`   | 🚀🚀🚀 | baixa        | rascunho/teste muito rápido |
 | `base`   | 🚀🚀   | ok           | default do `vdl.py` |
 | `small`  | 🚀     | boa          | bom equilíbrio para áudio limpo |
-| `medium` | 🐢*    | muito boa    | **default do `vdl-trans`** — melhor custo/benefício |
-| `large`  | 🐢🐢*  | a melhor     | máxima fidelidade |
+| `medium` | 🐢*    | muito boa    | ótimo custo/benefício (recomendado em CPU) |
+| `large`  | 🐢🐢*  | a melhor     | **default do `vdl-trans`** (large-v3) — máxima fidelidade |
 
 \* Na GPU (engine `mlx`), até `medium`/`large` ficam rápidos — veja o benchmark acima.
 
-A 1ª execução de cada modelo **baixa o checkpoint** (ex.: `medium` ≈ 1,5 GB) e o guarda
-em cache (`~/.cache/huggingface/...`). Para a engine CPU, dá para fixar o cache do
+A 1ª execução de cada modelo **baixa o checkpoint** (`medium` ≈ 1,5 GB; `large-v3` ≈ 3 GB)
+e o guarda em cache (`~/.cache/huggingface/...`). Para a engine CPU, dá para fixar o cache do
 faster-whisper com a env `VDL_WHISPER_CACHE`.
 
 ---

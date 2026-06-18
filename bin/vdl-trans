@@ -22,7 +22,7 @@
 #   VDL_MODEL=large VDL_ENGINE=mlx vdl-trans aula.mp4   # via variáveis de ambiente
 #   vdl-trans aula.mp4 --context               # repassa --context (usa engine cpu)
 #
-# Modelo padrão: medium. Engine padrão: auto. Sobrescrevíveis por --model/--engine
+# Modelo padrão: large (large-v3). Engine padrão: auto. Sobrescrevíveis por --model/--engine
 # (logo após o alvo) ou pelas envs VDL_MODEL / VDL_ENGINE. Flags extras que
 # dependem do vdl.py (ex.: --context) forçam a engine cpu automaticamente.
 set -euo pipefail
@@ -42,7 +42,7 @@ REPO="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 PY="$REPO/.venv-vdl/bin/python"
 VDL="$REPO/vdl.py"
 MLX="$REPO/_transcription_mlx.py"
-MODEL="${VDL_MODEL:-medium}"
+MODEL="${VDL_MODEL:-large}"
 ENGINE="${VDL_ENGINE:-auto}"
 
 usage() {

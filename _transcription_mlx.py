@@ -78,7 +78,7 @@ def main():
     parser.add_argument("input", help="Arquivo de vídeo ou pasta (busca recursiva).")
     parser.add_argument("-d", "--directory", default=".", help="Diretório de saída.")
     parser.add_argument(
-        "--whisper-model", default="medium",
+        "--whisper-model", default="large",
         choices=["tiny", "base", "small", "medium", "large"],
         help="Tamanho do modelo Whisper (mapeado para o checkpoint MLX).",
     )
