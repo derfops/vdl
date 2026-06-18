@@ -2,22 +2,29 @@
 #
 # vdl-trans — atalho para transcrição LOCAL (sem Docker) no macOS/Linux.
 #
-# Roda o vdl.py do repositório usando o venv local (.venv-vdl), em modo
-# --local --transcribe, com o destino dos artefatos = a própria pasta do
-# alvo (a pasta do arquivo, ou a pasta em si quando o alvo é um diretório).
+# Usa o venv local do repositório (.venv-vdl) para transcrever, com o destino
+# dos artefatos = a própria pasta do alvo (a pasta do arquivo, ou a pasta em si
+# quando o alvo é um diretório).
+#
+# Engines de transcrição:
+#   mlx  — mlx-whisper na GPU Apple (Metal): ~9x mais rápido. Só Apple Silicon.
+#   cpu  — faster-whisper em CPU/int8 (mesmo do servidor; roda em qualquer lugar).
+#   auto — (padrão) usa mlx no Apple Silicon se instalado; senão, cai no cpu.
 #
 # Uso:
-#   vdl-trans <arquivo|pasta> [--model tiny|base|small|medium|large] [flags extras do vdl.py]
+#   vdl-trans <arquivo|pasta> [--model tiny|base|small|medium|large] [--engine auto|mlx|cpu] [flags extras do vdl.py]
 #
 # Exemplos:
-#   vdl-trans "video.mp4"                      # transcreve 1 arquivo (modelo medium)
-#   vdl-trans ~/Videos                         # transcreve a pasta inteira (recursivo)
+#   vdl-trans "video.mp4"                      # 1 arquivo (auto: GPU no Mac)
+#   vdl-trans ~/Videos                         # pasta inteira (recursivo)
 #   vdl-trans aula.mp4 --model small           # modelo mais rápido
-#   VDL_MODEL=large vdl-trans aula.mp4          # modelo via variável de ambiente
-#   vdl-trans aula.mp4 --context                # repassa --context (gera contexto via OpenAI)
+#   vdl-trans aula.mp4 --engine cpu            # força faster-whisper (CPU)
+#   VDL_MODEL=large VDL_ENGINE=mlx vdl-trans aula.mp4   # via variáveis de ambiente
+#   vdl-trans aula.mp4 --context               # repassa --context (usa engine cpu)
 #
-# Modelo padrão: medium (bom custo/benefício em CPU no Mac). Sobrescreva com
-# --model X (logo após o alvo) ou com a variável de ambiente VDL_MODEL.
+# Modelo padrão: medium. Engine padrão: auto. Sobrescrevíveis por --model/--engine
+# (logo após o alvo) ou pelas envs VDL_MODEL / VDL_ENGINE. Flags extras que
+# dependem do vdl.py (ex.: --context) forçam a engine cpu automaticamente.
 set -euo pipefail
 
 # --- Resolve o caminho real do script, seguindo symlinks ---
@@ -34,7 +41,9 @@ REPO="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 
 PY="$REPO/.venv-vdl/bin/python"
 VDL="$REPO/vdl.py"
+MLX="$REPO/_transcription_mlx.py"
 MODEL="${VDL_MODEL:-medium}"
+ENGINE="${VDL_ENGINE:-auto}"
 
 usage() {
   # Imprime o bloco de comentário do cabeçalho (a partir da linha 3), parando
@@ -63,14 +72,18 @@ fi
 
 TARGET="$1"; shift
 
-# --model X opcional, logo após o alvo (antes das flags extras do vdl.py)
-if [ "${1:-}" = "--model" ]; then
-  if [ "$#" -lt 2 ]; then
-    echo "vdl-trans: --model requer um valor (tiny|base|small|medium|large)." >&2
-    exit 1
-  fi
-  MODEL="$2"; shift 2
-fi
+# Opções do wrapper (--model / --engine), em qualquer ordem, logo após o alvo.
+while [ "${1:-}" = "--model" ] || [ "${1:-}" = "--engine" ]; do
+  case "$1" in
+    --model)
+      [ "$#" -ge 2 ] || { echo "vdl-trans: --model requer um valor (tiny|base|small|medium|large)." >&2; exit 1; }
+      MODEL="$2"; shift 2;;
+    --engine)
+      [ "$#" -ge 2 ] || { echo "vdl-trans: --engine requer um valor (auto|mlx|cpu)." >&2; exit 1; }
+      ENGINE="$2"; shift 2;;
+  esac
+done
+# "$@" a partir daqui = flags extras repassadas ao vdl.py (ex.: --context).
 
 if [ ! -e "$TARGET" ]; then
   echo "vdl-trans: alvo não encontrado: $TARGET" >&2
@@ -86,8 +99,43 @@ else
   DEST="$(dirname "$TARGET")"
 fi
 
+# --- Resolução da engine ---
+# Flags extras (ex.: --context, -u) usam o fluxo do vdl.py → forçam cpu.
+if [ "$#" -gt 0 ]; then
+  if [ "$ENGINE" = "mlx" ]; then
+    echo "vdl-trans: flags extras ($*) não são suportadas pela engine mlx; usando cpu." >&2
+  fi
+  ENGINE="cpu"
+fi
+
+mlx_ok() {
+  [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] \
+    && "$PY" -c 'import importlib.util,sys; sys.exit(0 if importlib.util.find_spec("mlx_whisper") else 1)' >/dev/null 2>&1
+}
+
+case "$ENGINE" in
+  auto)
+    if mlx_ok; then ENGINE="mlx"; else ENGINE="cpu"; fi
+    ;;
+  mlx)
+    if ! mlx_ok; then
+      echo "vdl-trans: engine mlx indisponível (requer Apple Silicon + mlx-whisper); usando cpu." >&2
+      ENGINE="cpu"
+    fi
+    ;;
+  cpu) ;;
+  *)
+    echo "vdl-trans: --engine inválido: '$ENGINE' (use auto|mlx|cpu)." >&2
+    exit 1
+    ;;
+esac
+
 # Roda a partir do repo para que o diretório logs/ do vdl.py caia no repo
 # (ignorado pelo git), e não na pasta de onde o usuário chamou o comando.
 cd "$REPO"
 
-exec "$PY" "$VDL" "$TARGET" --local --transcribe -d "$DEST" --whisper-model "$MODEL" "$@"
+if [ "$ENGINE" = "mlx" ]; then
+  exec "$PY" "$MLX" "$TARGET" -d "$DEST" --whisper-model "$MODEL"
+else
+  exec "$PY" "$VDL" "$TARGET" --local --transcribe -d "$DEST" --whisper-model "$MODEL" "$@"
+fi
