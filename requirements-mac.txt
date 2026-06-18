@@ -1,0 +1,12 @@
+# Extra OPCIONAL — só macOS Apple Silicon.
+#
+# Habilita a engine de transcrição na GPU (Metal) via mlx-whisper, usada pelo
+# vdl-trans (--engine mlx, ou auto no Apple Silicon). ~9x mais rápida que o
+# faster-whisper em CPU, com qualidade equivalente.
+#
+# O servidor/Docker (Linux) NÃO usa isto e continua no faster-whisper
+# (requirements.txt). Instale por cima do venv local já criado:
+#
+#   ./.venv-vdl/bin/pip install -r requirements-mac.txt
+#
+mlx-whisper>=0.4,<1
